@@ -163,6 +163,13 @@ async function main(): Promise<void> {
     for (const l of LABELS) results[r.id]![l.id] = { hits: 0, total: 0 }
   }
   const alertCounts: Record<keyof typeof BUDGETS, number[]> = { LOW: [], MEDIUM: [], HIGH: [] }
+  // Per budget: did each fired alert turn out to be meaningful, and how many
+  // meaningful events did that threshold miss? This is the operating point the
+  // user actually chooses, so it is the thing worth measuring.
+  const budgetHits: Record<keyof typeof BUDGETS, { fired: number; correct: number; missed: number }> =
+    { LOW: { fired: 0, correct: 0, missed: 0 },
+      MEDIUM: { fired: 0, correct: 0, missed: 0 },
+      HIGH: { fired: 0, correct: 0, missed: 0 } }
   let evaluatedDays = 0
 
   const maxHorizon = Math.max(...LABELS.map((l) => l.horizon))
@@ -210,6 +217,18 @@ async function main(): Promise<void> {
         cell.total += ranked.length
         cell.hits += ranked.filter((c) => meaningful.has(c.symbolId)).length
       }
+
+      // Budget performance is measured against the PRIMARY label only —
+      // reporting it three ways would imply a precision we cannot pick between.
+      if (label.id === LABELS[0]!.id) {
+        for (const b of Object.keys(BUDGETS) as (keyof typeof BUDGETS)[]) {
+          const fired = candidates.filter((c) => c.pctl !== null && c.pctl >= BUDGETS[b])
+          const firedIds = new Set(fired.map((c) => c.symbolId))
+          budgetHits[b].fired += fired.length
+          budgetHits[b].correct += fired.filter((c) => meaningful.has(c.symbolId)).length
+          budgetHits[b].missed += [...meaningful].filter((id) => !firedIds.has(id)).length
+        }
+      }
     }
   }
 
@@ -235,15 +254,22 @@ async function main(): Promise<void> {
         })),
       },
     ])),
-    alertVolume: Object.fromEntries((Object.keys(BUDGETS) as (keyof typeof BUDGETS)[]).map((b) => [
-      b,
-      {
+    alertVolume: Object.fromEntries((Object.keys(BUDGETS) as (keyof typeof BUDGETS)[]).map((b) => {
+      const h = budgetHits[b]
+      const meaningfulTotal = h.correct + h.missed
+      return [b, {
         thresholdPercentile: BUDGETS[b],
         meanAlertsPerSessionPer50Symbols: mean(alertCounts[b]),
         medianAlertsPerSession: median(alertCounts[b]),
         maxAlertsPerSession: Math.max(0, ...alertCounts[b]),
-      },
-    ])),
+        // Of the alerts this threshold fired, how many were meaningful.
+        precision: h.fired > 0 ? h.correct / h.fired : 0,
+        // Of the meaningful events, how many this threshold caught.
+        recall: meaningfulTotal > 0 ? h.correct / meaningfulTotal : 0,
+        alertsFired: h.fired,
+        labelUsed: LABELS[0]!.id,
+      }]
+    })),
   }
 
   mkdirSync(new URL('../out/', import.meta.url), { recursive: true })
@@ -286,11 +312,12 @@ function markdown(r: ReturnType<typeof Object> extends never ? never : any): str
   lines.push('')
   lines.push('### Alert volume (per session, 50-symbol watchlist)')
   lines.push('')
-  lines.push('| Budget | Threshold | Mean | Median | Max |')
-  lines.push('|---|---|---|---|---|')
+  lines.push('| Budget | Threshold | Mean/session | Max | Precision | Recall |')
+  lines.push('|---|---|---|---|---|---|')
   for (const b of Object.keys(r.alertVolume)) {
     const a = r.alertVolume[b]
-    lines.push(`| ${b} | p${a.thresholdPercentile} | ${a.meanAlertsPerSessionPer50Symbols.toFixed(2)} | ${a.medianAlertsPerSession.toFixed(1)} | ${a.maxAlertsPerSession} |`)
+    lines.push(`| ${b} | p${a.thresholdPercentile} | ${a.meanAlertsPerSessionPer50Symbols.toFixed(2)} | ` +
+      `${a.maxAlertsPerSession} | ${a.precision.toFixed(3)} | ${a.recall.toFixed(3)} |`)
   }
   return lines.join('\n')
 }

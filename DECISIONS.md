@@ -222,3 +222,23 @@ unit at all.
 
 **Tradeoff.** Two genuinely extreme days can tie at `99+`. Ranking still separates
 them by the raw composite underneath.
+
+---
+
+### 16. Rate limits are set by cost, not uniformly.
+
+**Decision.** Four categories rather than one global number: 300/min for ordinary
+reads, 60/min for `GET /api/brief`, 20/min for session creation, and 10/min for
+`POST /api/changes/:id/investigate`. The limiter returns the same error envelope
+as every other endpoint.
+
+**Why.** These endpoints are not equally expensive. A watchlist read is a couple
+of indexed queries. A brief scores an entire watchlist against calibrated
+history. An investigation calls a model and spends real money — an unbounded
+loop against that endpoint is a bill, not just load. One global limit would have
+to be loose enough for the cheap paths, which makes it useless for the expensive
+ones.
+
+**Tradeoff.** In-memory counters, so the limits are per-process and reset on
+restart. Correct for a single local process; a multi-instance deployment would
+point the limiter at the Redis that DECISIONS #9 already describes.

@@ -212,6 +212,29 @@ export const marketEvents = pgTable('market_events', {
   dedupe: uniqueIndex('market_events_dedupe_idx').on(t.symbolId, t.publishedAt, t.headline),
 }))
 
+/**
+ * Bars excluded from every statistic, and why.
+ *
+ * Detecting a corporate action is worthless if the only evidence is a line in an
+ * ingest log nobody reads. Persisting it makes the system's integrity work
+ * visible — and lets the UI explain what would have gone wrong without it.
+ */
+export const dataQuarantine = pgTable('data_quarantine', {
+  id: text('id').primaryKey(),
+  symbolId: text('symbol_id').notNull().references(() => symbols.id, { onDelete: 'cascade' }),
+  date: date('date').notNull(),
+  /** What the check concluded, in the words the detector used. */
+  reason: text('reason').notNull(),
+  /** Corporate-action ratio implied by the raw/adjusted divergence, when known. */
+  impliedRatio: doublePrecision('implied_ratio'),
+  /** The move that would have been reported had the bar not been quarantined. */
+  apparentMovePct: doublePrecision('apparent_move_pct'),
+  detectedAt: timestamp('detected_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  dedupe: uniqueIndex('data_quarantine_dedupe_idx').on(t.symbolId, t.date),
+  bySymbol: index('data_quarantine_symbol_idx').on(t.symbolId, t.date.desc()),
+}))
+
 /* ------------------------------------------------------------- user truth */
 
 export const users = pgTable('users', {

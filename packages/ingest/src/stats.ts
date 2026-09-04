@@ -11,10 +11,18 @@ export const MIN_HISTORY = 80
 
 const CLEAN: QualityAssessment = { quality: 'FRESH', reason: 'Historical bar', ageMs: 0, sources: ['history'] }
 
+export interface QuarantinedBar {
+  date: string
+  reason: string
+  impliedRatio?: number | undefined
+  /** What the raw close implies — the move we would have wrongly reported. */
+  apparentMovePct: number
+}
+
 export interface StatsResult {
   stats: SymbolStats
   /** Dates whose bars failed sanity checks and were excluded from every estimate. */
-  quarantined: { date: string; reason: string }[]
+  quarantined: QuarantinedBar[]
 }
 
 /**
@@ -45,7 +53,7 @@ export function computeSymbolStats(params: {
   if (aligned.length < MIN_HISTORY) return null
 
   // --- sanity pass: quarantine artefacts before they reach any estimator -----
-  const quarantined: { date: string; reason: string }[] = []
+  const quarantined: QuarantinedBar[] = []
   const clean: DailyBar[] = []
   for (let i = 0; i < aligned.length; i++) {
     const bar = aligned[i]!
@@ -59,7 +67,14 @@ export function computeSymbolStats(params: {
       indexReturn: prevIdx ? logReturn(prevIdx.adjClose, idx.adjClose) : null,
       knownCorporateAction: actionDates.has(bar.date),
     })
-    if (verdict.suspect) quarantined.push({ date: bar.date, reason: verdict.reason })
+    if (verdict.suspect) {
+      quarantined.push({
+        date: bar.date,
+        reason: verdict.reason,
+        impliedRatio: verdict.impliedRatio,
+        apparentMovePct: prev.close > 0 ? (bar.close / prev.close - 1) * 100 : 0,
+      })
+    }
     else clean.push(bar)
   }
   if (clean.length < MIN_HISTORY) return null

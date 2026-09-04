@@ -7,6 +7,7 @@ import { AttentionScore, Delta, QualityBadge, TierLabel } from '@/components/Ind
 import { Skeleton, ErrorState, EmptyState, SimulatedBanner } from '@/components/States'
 import { timeIST, dateIST } from '@/components/format'
 import { TimeTravel } from '@/components/TimeTravel'
+import { AttentionBudget } from '@/components/AttentionBudget'
 
 export default function BriefPage() {
   const [brief, setBrief] = useState<Brief | null>(null)
@@ -64,6 +65,7 @@ export default function BriefPage() {
       )}
 
       <FilteredNote brief={brief} />
+      <AttentionBudget current={brief.budget} onChange={() => void load(at)} />
       <Withheld brief={brief} />
       <SeenControl brief={brief} onDone={() => void load(at)} />
     </div>
@@ -269,7 +271,11 @@ function Withheld({ brief }: { brief: Brief }) {
       </ul>
       <p className="mt-3 max-w-prose text-[0.78rem] leading-relaxed text-ink-faint">
         These may have moved. We are not telling you they did, because the data behind them did not
-        pass its checks — and a confident wrong alert is worse than silence.
+        pass its checks — and a confident wrong alert is worse than silence.{' '}
+        <Link href="/health" className="underline decoration-ink-hairline underline-offset-4 hover:text-ink">
+          See what else was excluded
+        </Link>
+        .
       </p>
     </section>
   )

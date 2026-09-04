@@ -104,16 +104,19 @@ export default function EvalPage() {
         <h2 className="eyebrow">What a budget actually costs you</h2>
         <p className="mt-3 max-w-prose text-[0.85rem] leading-relaxed text-ink-muted">
           Because the score is a calibrated percentile, the attention setting is a false-positive
-          rate rather than a slider. That means the alert volume it produces is predictable — and
-          measurable.
+          rate rather than a slider — so what it costs you is measurable rather than asserted.
+          These are the numbers shown beside the setting in the app.
         </p>
-        <table className="mt-4 w-full text-[0.85rem]">
+        <div className="mt-4 overflow-x-auto">
+        <table className="w-full min-w-[32rem] text-[0.85rem]">
           <thead>
             <tr className="border-b border-ink-hairline text-left text-[0.68rem] uppercase tracking-[0.09em] text-ink-faint">
               <th scope="col" className="pb-2 font-medium">Budget</th>
               <th scope="col" className="pb-2 text-right font-medium">Threshold</th>
-              <th scope="col" className="pb-2 text-right font-medium">Mean / session</th>
-              <th scope="col" className="pb-2 text-right font-medium">Worst session</th>
+              <th scope="col" className="pb-2 text-right font-medium">Alerts / session</th>
+              <th scope="col" className="pb-2 text-right font-medium">Worst</th>
+              <th scope="col" className="pb-2 text-right font-medium">Precision</th>
+              <th scope="col" className="pb-2 text-right font-medium">Recall</th>
             </tr>
           </thead>
           <tbody>
@@ -123,10 +126,20 @@ export default function EvalPage() {
                 <td className="tnum py-2.5 text-right text-ink-muted">p{v.thresholdPercentile}</td>
                 <td className="tnum py-2.5 text-right text-ink">{v.meanAlertsPerSessionPer50Symbols.toFixed(2)}</td>
                 <td className="tnum py-2.5 text-right text-ink-muted">{v.maxAlertsPerSession}</td>
+                <td className="tnum py-2.5 text-right text-ink">{v.precision.toFixed(3)}</td>
+                <td className="tnum py-2.5 text-right text-ink-muted">{v.recall.toFixed(3)}</td>
               </tr>
             ))}
           </tbody>
         </table>
+        </div>
+        <p className="mt-3 max-w-prose text-[0.78rem] leading-relaxed text-ink-faint">
+          The trade-off is visible in the numbers rather than argued for: the quietest setting is
+          the most precise and catches the least; the most sensitive catches roughly five times as
+          much for a few points of precision. Measured against{' '}
+          <span className="font-mono text-[0.72rem]">{r.labels[0]?.id}</span> on the same held-out
+          sessions as the table above.
+        </p>
       </section>
 
       <section className="mt-10 border-t border-ink-hairline pt-7">

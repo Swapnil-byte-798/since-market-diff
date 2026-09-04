@@ -89,14 +89,19 @@ Now the number means something you can check:
 And because the score is a percentile, the attention setting becomes a
 **false-positive rate** rather than a slider:
 
-| Budget | Threshold | Meaning | Measured alerts/session (50 symbols) |
-|---|---|---|---|
-| Low | p99 | 1-in-100 days | 0.72 |
-| Medium | p95 | 1-in-20 days | 2.70 |
-| High | p90 | 1-in-10 days | 4.84 |
+| Budget | Threshold | Alerts/session | Precision | Recall |
+|---|---|---|---|---|
+| Low | p99 | 0.72 | **0.246** | 0.023 |
+| Medium | p95 | 2.70 | 0.196 | 0.069 |
+| High | p90 | 4.84 | 0.186 | **0.117** |
 
-Those volumes are not estimates. They are measured over 165 held-out sessions by
-`npm run eval`.
+None of those are estimates — all are measured over 165 held-out sessions by
+`npm run eval`, and the app reads them from that file rather than hardcoding them.
+The trade-off is visible rather than argued: the quietest setting is the most
+precise and catches the least; the most sensitive catches ~5x as much for a few
+points of precision. The control on the Brief shows these numbers beside each
+choice, and states plainly that it changes only your tolerance — not the market
+data or the scoring engine.
 
 ### And it is capped
 
@@ -185,6 +190,11 @@ not a guess — and it fires on every ingest:
 [ingest] quarantined bars: 1
     TATASTEEL.NS 2026-09-02 — Raw and adjusted closes diverge — corporate action, not a price move
 ```
+
+Quarantined bars are **persisted and shown**, not merely logged — the Data screen
+reports what was excluded and what would have happened without the check:
+
+> **Tata Steel** · 2 Sept 2026 · 1:2 split detected · **Would have shown as -49.8%**
 
 Also handled: out-of-order ticks (monotonic write guard), duplicate observations
 (`UNIQUE(symbol, source, observed_at)`), bad ticks (robust estimators), market hours
@@ -306,6 +316,33 @@ party's availability. `GET /api/brief` for a 30-symbol watchlist: **~0.6s**
 
 ---
 
+## Implementation status
+
+Audited against the specification this was built to. Nothing below is aspirational.
+
+| Area | Status |
+|---|---|
+| Monorepo, pure `@since/core`, eval imports the same scoring code | done |
+| NSE / NIFTY 50, Asia/Kolkata, market hours and holidays derived from data | done |
+| Market truth / user truth / derived split (19 tables) | done |
+| Provider abstraction: real Yahoo + deterministic synthetic | done |
+| `evaluateBrief(user, at)` — one path for live and replay | done |
+| Deterministic scoring, robust statistics, 7 signals, percentile calibration | done |
+| `/debug/why` full breakdown | done |
+| Quality gate before scoring; 6 states; splits, bad ticks, out-of-order, duplicates | done |
+| Quarantine persisted and surfaced in the UI | done |
+| Read cursors per (user, symbol), `GREATEST` cross-device merge | done |
+| Attention budget UI with measured precision and recall | done |
+| Brief · WHY · investigation · replay · watchlist · data health · eval | done |
+| Evaluation harness: 3 rankers + ablation, 3 labels, per-budget operating points | done |
+| Rate limiting by cost category | done |
+| All 18 specified API endpoints (20 total) | done |
+| 69 tests, 7 packages typechecked, production build clean | done |
+| Agent: hypothesis elimination, 9 typed tools, guards, deterministic fallback | **code complete; never run against a live model** |
+| Real NSE market data | **blocked — Yahoo IP rate limit** |
+| Frontend component tests | not done, deliberately |
+| Feedback loop feeding into weights | not done — votes are stored only |
+
 ## Running it
 
 Everything is local. No cloud dependency, no deploy target.
@@ -320,6 +357,7 @@ npm run dev               # API on :4000, app on http://localhost:3000
 npm run demo:reset        # rewind cursors so the walkthrough is repeatable
 npm run feed:check        # is the real NSE feed reachable yet?
 npm run status            # is everything running?
+npm run validate          # what is demonstrable right now, and what is blocked
 npm run share             # temporary public URL, for a live demo
 npm run share -- --detach # ...and leave it running in the background
 ```
@@ -340,6 +378,11 @@ Or the whole setup in one line: `npm run setup && npm run dev`
 
 No secret is ever exposed to the browser: the agent runs server-side only, and the
 web app talks to the API through a same-origin Next rewrite.
+
+**Rate limits are set by cost, not uniformly** (DECISIONS #16): 300/min for ordinary
+reads, 60/min for `GET /api/brief` (which scores a whole watchlist), 20/min for
+session creation, and 10/min for `POST /changes/:id/investigate` (which calls a
+model and spends money). All return the same error envelope as every other endpoint.
 
 ---
 
@@ -393,6 +436,10 @@ Every one of those would have made the feature list longer and the product worse
 5. **Beta is fitted on daily returns and applied to intraday windows.** Defensible
    and stable, but a mild mismatch on short windows.
 6. **No auth.** A signed cookie names the demo user. Deliberate, and not shippable.
+7. **Rate limits are in-process.** Correct for one local process; a multi-instance
+   deployment would point the limiter at the Redis described in DECISIONS #9.
+8. **No frontend component tests.** The scoring engine and agent guards are tested;
+   the React layer is verified manually. A deliberate trade, stated rather than hidden.
 
 ## With another week
 

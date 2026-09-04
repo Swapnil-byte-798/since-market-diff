@@ -4,6 +4,7 @@ import { api, type DataHealth } from '@/lib/api'
 import { QualityBadge } from '@/components/Indicators'
 import { Skeleton, ErrorState } from '@/components/States'
 import { rupees, ago } from '@/components/format'
+import { Integrity } from '@/components/Integrity'
 
 export default function HealthPage() {
   const [data, setData] = useState<DataHealth | null>(null)
@@ -66,6 +67,8 @@ export default function HealthPage() {
           </ul>
         </section>
       ) : null}
+
+      <Integrity rows={data.quarantined ?? []} />
 
       <section className="mt-10">
         <h2 className="eyebrow">All symbols</h2>

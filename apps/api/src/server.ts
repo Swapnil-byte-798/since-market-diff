@@ -1,6 +1,7 @@
 import Fastify from 'fastify'
 import cookie from '@fastify/cookie'
 import cors from '@fastify/cors'
+import rateLimit from '@fastify/rate-limit'
 import { readFileSync } from 'node:fs'
 import { z } from 'zod'
 import { and, asc, eq, ilike, inArray, or, sql as dsql } from 'drizzle-orm'
@@ -23,6 +24,48 @@ const app = Fastify({
 })
 
 await app.register(cors, { origin: true, credentials: true })
+
+/**
+ * Rate limiting, by cost rather than uniformly.
+ *
+ * Endpoints are not equally expensive. A watchlist read is a couple of indexed
+ * queries; a brief scores an entire watchlist; an investigation calls a model
+ * and costs real money. A single global limit would either be too loose to
+ * protect the expensive paths or too tight to use the cheap ones, so each
+ * category gets its own. See DECISIONS.md #16.
+ */
+export const LIMITS = {
+  /** Default for ordinary reads and writes. */
+  global: { max: 300, timeWindow: '1 minute' },
+  /** Scores the whole watchlist — the most expensive read path. */
+  brief: { max: 60, timeWindow: '1 minute' },
+  /** Calls an LLM and spends money. Deliberately strict. */
+  investigate: { max: 10, timeWindow: '1 minute' },
+  /** Issues a session cookie. */
+  session: { max: 20, timeWindow: '1 minute' },
+} as const
+
+await app.register(rateLimit, {
+  global: true,
+  ...LIMITS.global,
+  // Behind the Next proxy every request appears to come from the same address,
+  // so fall back to the forwarded address when one is present.
+  keyGenerator: (req) => {
+    const fwd = req.headers['x-forwarded-for']
+    const first = Array.isArray(fwd) ? fwd[0] : fwd?.split(',')[0]?.trim()
+    return first || req.ip
+  },
+  // One error shape for the whole API — a limiter that returns a different
+  // envelope is a client bug waiting to happen.
+  errorResponseBuilder: (_req, ctx) => ({
+    statusCode: 429,
+    error: {
+      code: 'RATE_LIMITED',
+      message: `Too many requests. Try again in ${Math.ceil(ctx.ttl / 1000)}s.`,
+      detail: { limit: ctx.max, windowMs: ctx.ttl },
+    },
+  }),
+})
 
 // A POST with no body is legitimate (e.g. starting a session). Treat an empty
 // JSON payload as `{}` instead of rejecting the request.
@@ -49,7 +92,7 @@ app.setErrorHandler((err, _req, reply) => send(reply, err))
 
 /* --------------------------------------------------------------- session */
 
-app.post('/api/session/demo', async (_req, reply) => {
+app.post('/api/session/demo', { config: { rateLimit: LIMITS.session } }, async (_req, reply) => {
   reply.setCookie('since_session', DEMO_USER, {
     path: '/', httpOnly: true, sameSite: 'lax', signed: true,
     secure: process.env.NODE_ENV === 'production', maxAge: 60 * 60 * 24 * 30,
@@ -175,7 +218,7 @@ app.put('/api/watchlist/items/:symbolId/threshold', async (req) => {
 
 /* ------------------------------------------------------------------ brief */
 
-app.get('/api/brief', async (req) => {
+app.get('/api/brief', { config: { rateLimit: LIMITS.brief } }, async (req) => {
   const userId = userIdOf(req as never)
   const parsed = z.object({
     at: isoDate,
@@ -289,7 +332,7 @@ app.get('/api/changes/:id', async (req) => {
 
 const running = new Map<string, Promise<unknown>>()
 
-app.post('/api/changes/:id/investigate', async (req) => {
+app.post('/api/changes/:id/investigate', { config: { rateLimit: LIMITS.investigate } }, async (req) => {
   const userId = userIdOf(req as never)
   const { id } = z.object({ id: z.string().min(3).max(64) }).parse(req.params)
   const change = await getChange(userId, id)
@@ -458,22 +501,60 @@ app.get('/api/data-health', async (req) => {
       values: list.map((o) => ({ source: o.source, price: o.price, observedAt: o.observedAt.toISOString() })),
     })
   }
-  return { ...meta, marketOpen: cal.isOpen(now), at: now.toISOString(), symbols: rows }
+  // Bars excluded from every statistic. This is the integrity work the system
+  // does silently at ingest; showing it is the only way anyone knows it happened.
+  const quarantined = await db.select({
+    symbolId: schema.dataQuarantine.symbolId,
+    date: schema.dataQuarantine.date,
+    reason: schema.dataQuarantine.reason,
+    impliedRatio: schema.dataQuarantine.impliedRatio,
+    apparentMovePct: schema.dataQuarantine.apparentMovePct,
+  }).from(schema.dataQuarantine)
+    .orderBy(dsql`${schema.dataQuarantine.date} desc`)
+    .limit(20)
+
+  const names = await q.symbolsWithSectors(quarantined.map((x) => x.symbolId))
+  const nameBy = new Map(names.map((n) => [n.id, n.name]))
+
+  return {
+    ...meta, marketOpen: cal.isOpen(now), at: now.toISOString(), symbols: rows,
+    quarantined: quarantined.map((x) => ({
+      ...x,
+      name: nameBy.get(x.symbolId) ?? x.symbolId,
+      /** Stated plainly, because the counterfactual is the whole point. */
+      wouldHaveShown: x.apparentMovePct !== null
+        ? `${x.apparentMovePct > 0 ? '+' : ''}${x.apparentMovePct.toFixed(1)}%`
+        : null,
+    })),
+  }
 })
 
 /* --------------------------------------------------------------- settings */
+
+const BUDGET_COPY = {
+  LOW: { title: 'Only the rarest', blurb: 'Interrupt me only when something is genuinely unusual.' },
+  MEDIUM: { title: 'Balanced', blurb: 'The default. Enough to stay informed, quiet enough to trust.' },
+  HIGH: { title: 'More sensitive', blurb: 'Show me more, and I will accept more noise to get it.' },
+} as const
 
 app.get('/api/settings', async (req) => {
   const userId = userIdOf(req as never)
   const [s] = await db.select().from(schema.attentionSettings)
     .where(eq(schema.attentionSettings.userId, userId)).limit(1)
   const budget = s?.budget ?? 'MEDIUM'
+  const measured = budgetStats()
   return {
     budget, maxCards: s?.maxCards ?? 3,
     budgetLabel: BUDGET_LABEL[budget], budgetThreshold: BUDGET_THRESHOLD[budget],
     options: (['LOW', 'MEDIUM', 'HIGH'] as const).map((b) => ({
-      value: b, label: BUDGET_LABEL[b], threshold: BUDGET_THRESHOLD[b],
+      value: b,
+      label: BUDGET_LABEL[b],
+      threshold: BUDGET_THRESHOLD[b],
+      title: BUDGET_COPY[b].title,
+      blurb: BUDGET_COPY[b].blurb,
+      measured: measured[b],
     })),
+    measuredFrom: (evalReport() as { dataset?: unknown } | null)?.dataset ?? null,
   }
 })
 
@@ -512,6 +593,32 @@ app.post('/api/changes/:id/feedback', async (req) => {
 
 /* ------------------------------------------------------- eval + debug ---- */
 
+/**
+ * Measured performance of each attention budget, read from the evaluation run.
+ *
+ * The UI shows these next to the choices. They are read from disk rather than
+ * written into the code, so the setting can never advertise a number the
+ * harness did not produce.
+ */
+function evalReport(): Record<string, unknown> | null {
+  try {
+    return JSON.parse(readFileSync(new URL('../../../eval/out/results.json', import.meta.url), 'utf8'))
+  } catch { return null }
+}
+
+function budgetStats(): Record<string, { meanPerSession: number; precision: number; recall: number } | null> {
+  const r = evalReport() as { alertVolume?: Record<string, {
+    meanAlertsPerSessionPer50Symbols: number; precision: number; recall: number }> } | null
+  const out: Record<string, { meanPerSession: number; precision: number; recall: number } | null> = {}
+  for (const b of ['LOW', 'MEDIUM', 'HIGH']) {
+    const v = r?.alertVolume?.[b]
+    out[b] = v
+      ? { meanPerSession: v.meanAlertsPerSessionPer50Symbols, precision: v.precision, recall: v.recall }
+      : null
+  }
+  return out
+}
+
 app.get('/api/eval', async () => {
   try {
     const raw = readFileSync(new URL('../../../eval/out/results.json', import.meta.url), 'utf8')
@@ -526,7 +633,7 @@ app.get('/api/eval', async () => {
  * Exposed deliberately: if the attention score cannot be inspected, it cannot
  * be trusted.
  */
-app.get('/debug/why', async (req) => {
+app.get('/debug/why', { config: { rateLimit: LIMITS.brief } }, async (req) => {
   const userId = userIdOf(req as never)
   const { symbol, at } = z.object({ symbol: symbolIdSchema, at: isoDate }).parse(req.query)
   const when = at ? new Date(at) : new Date()

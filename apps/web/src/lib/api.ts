@@ -134,14 +134,26 @@ export interface ReplayResponse {
   attentionCrossedAt: string | null
   note: string | null
 }
+export interface QuarantineRow {
+  symbolId: string; name: string; date: string; reason: string
+  impliedRatio: number | null; apparentMovePct: number | null; wouldHaveShown: string | null
+}
 export interface DataHealth {
   provider: string; simulated: boolean; marketOpen: boolean; at: string
   symbols: { symbolId: string; quality: Quality; reason: string; ageMs: number | null; sources: string[]
     values: { source: string; price: number | null; observedAt: string }[] }[]
+  quarantined: QuarantineRow[]
+}
+export interface BudgetMeasurement { meanPerSession: number; precision: number; recall: number }
+export interface BudgetOption {
+  value: string; label: string; threshold: number
+  title: string; blurb: string
+  measured: BudgetMeasurement | null
 }
 export interface Settings {
   budget: string; maxCards: number; budgetLabel: string; budgetThreshold: number
-  options: { value: string; label: string; threshold: number }[]
+  options: BudgetOption[]
+  measuredFrom: unknown
 }
 export interface EvalReport {
   generatedAt: string
@@ -151,5 +163,6 @@ export interface EvalReport {
   labels: { id: string; description: string; horizon: number; sigmas: number }[]
   precisionAtK: Record<string, { label: string; byLabel: Record<string, number> }>
   alertVolume: Record<string, { thresholdPercentile: number; meanAlertsPerSessionPer50Symbols: number
-    medianAlertsPerSession: number; maxAlertsPerSession: number }>
+    medianAlertsPerSession: number; maxAlertsPerSession: number
+    precision: number; recall: number; alertsFired: number; labelUsed: string }>
 }

@@ -28,7 +28,8 @@
     "demo:reset": "tsx scripts/demo-reset.ts",
     "feed:check": "node scripts/feed-check.mjs",
     "status": "node scripts/status.mjs",
-    "share": "node scripts/share.mjs"
+    "share": "node scripts/share.mjs",
+    "validate": "node scripts/validate.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",

@@ -64,7 +64,8 @@ async function main(): Promise<void> {
   // at the seam. --clean makes a run reproducible from empty.
   if (CLEAN) {
     await db.execute(dsql`TRUNCATE daily_bars, intraday_bars, corporate_actions,
-      market_events, symbol_stats, observations, change_events RESTART IDENTITY CASCADE`)
+      market_events, symbol_stats, observations, change_events, data_quarantine
+      RESTART IDENTITY CASCADE`)
     log('cleaned market-truth tables (--clean)')
   }
 
@@ -120,7 +121,8 @@ async function main(): Promise<void> {
 
   // ---- symbols -------------------------------------------------------------
   const failures: string[] = []
-  const allQuarantined: { symbolId: string; date: string; reason: string }[] = []
+  const allQuarantined: { symbolId: string; date: string; reason: string;
+    impliedRatio?: number | undefined; apparentMovePct: number }[] = []
   const gridsForFallback: (number[] | null)[] = []
   let ingested = 0
 
@@ -195,6 +197,15 @@ async function main(): Promise<void> {
 
   log(`symbols ingested: ${ingested}/${UNIVERSE.length}`)
   if (allQuarantined.length) {
+    await db.insert(schema.dataQuarantine).values(allQuarantined.map((q) => ({
+      id: `${q.symbolId}:${q.date}`,
+      symbolId: q.symbolId, date: q.date, reason: q.reason,
+      impliedRatio: q.impliedRatio ?? null,
+      apparentMovePct: q.apparentMovePct,
+    }))).onConflictDoUpdate({
+      target: [schema.dataQuarantine.symbolId, schema.dataQuarantine.date],
+      set: { reason: dsql.raw('excluded."reason"') as never },
+    })
     log(`quarantined bars (corporate actions / bad ticks): ${allQuarantined.length}`)
     for (const q of allQuarantined.slice(0, 8)) log(`    ${q.symbolId} ${q.date} — ${q.reason}`)
   }
