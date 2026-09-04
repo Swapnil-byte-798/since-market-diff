@@ -131,3 +131,94 @@ when it matters. The place Redis belongs is documented (hot latest-quote cache,
 pub/sub fan-out on the symbol -> subscribers index) so the seam is visible.
 
 **Tradeoff.** The fan-out scaling story is argued rather than demonstrated.
+
+---
+
+### 10. The trading calendar is derived from data, never hardcoded.
+
+**Decision.** Any weekday for which the benchmark has no bar was not a trading day.
+`TradingCalendar` is constructed from the dates `^NSEI` actually traded.
+
+**Why.** A hardcoded holiday list is wrong the moment the exchange publishes a new
+calendar, and a wrong list produces silently wrong windows — sigma scaled by the
+wrong session count, "since you last looked" spanning a day that never existed.
+Deriving it from the data cannot drift from reality.
+
+**Tradeoff.** A gap in benchmark ingestion would look like a holiday. Acceptable:
+the benchmark is fetched first and the run aborts if it is missing.
+
+---
+
+### 11. Volume anomaly is measured in log space.
+
+**Decision.** `z = ln(volume / median₂₀) / MAD(ln volume)`, with a floor of 0.25 on
+the scale.
+
+**Why.** Found by inspection, not by theory: two cards were scoring an identical
+3.60 on volume, both pinned to the clip. Traded volume is lognormal, so a linear MAD
+gives a scale far too tight and any busy day becomes a 6σ event — the signal stops
+discriminating between busy and extraordinary. In logs, 2.6× scores 2.31 and 2.0×
+scores 1.66.
+
+**Tradeoff.** The floor is a magic number. It exists because a symbol with freakishly
+steady volume would otherwise turn every tick into an anomaly.
+
+---
+
+### 12. Batch every lookup in the brief path.
+
+**Decision.** One query per data type for the whole watchlist, not per symbol.
+
+**Why.** The first working version issued roughly 240 queries for a 30-symbol
+watchlist and took **9.1 seconds**. The same brief now takes **0.63s** with
+byte-identical output. Per-symbol helpers still exist for the single-symbol paths
+where they are correct.
+
+**Tradeoff.** The brief service is bulkier — it loads, then scores, rather than
+interleaving. Worth 14×.
+
+---
+
+### 13. The API is proxied through Next, not called cross-origin.
+
+**Decision.** `next.config.mjs` rewrites `/api/*` to the Fastify process.
+
+**Why.** `localhost:3000` and `127.0.0.1:4000` are different *sites*, so the session
+cookie was dropped under `SameSite=Lax`. The tempting fix — `SameSite=None` — weakens
+a security control to work around a local-dev topology. Proxying makes the API
+first-party instead: no CORS, no cookie exceptions, one origin to open.
+
+**Tradeoff.** One more hop in development. None in a real deployment, where the two
+would sit behind the same origin anyway.
+
+---
+
+### 14. Injected faults are anchored to the data, not the wall clock.
+
+**Decision.** The stale-feed fault is pinned to the dataset's last session close; the
+conflicting-source fault is written alongside every one of the last 120 intraday
+bars.
+
+**Why.** The first version stamped the conflict "four minutes ago" at ingest time.
+Fifteen minutes later the freshness gate correctly reclassified it as STALE — so the
+*conflicting sources* demo silently became the *stale data* demo, and would have
+done so on stage. A demo that depends on how long ago you ran a script is not a demo.
+
+**Tradeoff.** More rows, and the primary source needs a matching observation at each
+instant for there to be anything to conflict with.
+
+---
+
+### 15. The score is never displayed as 100.
+
+**Decision.** A saturated percentile renders as `99+` with the phrase "the most
+extreme day in its recorded history".
+
+**Why.** `percentileOf` saturates at 100 when a value exceeds everything in the
+calibration grid, and "100th percentile" reads as certainty. What the grid actually
+says is "this is the most extreme value in our sample" — a statement about the
+sample, not about the world. The distinction is the whole reason the score has a
+unit at all.
+
+**Tradeoff.** Two genuinely extreme days can tie at `99+`. Ranking still separates
+them by the raw composite underneath.

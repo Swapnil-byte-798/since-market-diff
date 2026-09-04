@@ -20,6 +20,18 @@ import {
   timestamp, date, jsonb, primaryKey, uniqueIndex, index,
 } from 'drizzle-orm/pg-core'
 
+import type { SignalKey } from '@since/core'
+
+/** Mirror of @since/core's SignalContribution, stored verbatim on a change event. */
+export interface StoredContribution {
+  key: SignalKey
+  label: string
+  z: number
+  weight: number
+  points: number
+  detail: string
+}
+
 /* ------------------------------------------------------------------ enums */
 
 /** How much we trust a price at the moment we are about to reason about it. */
@@ -291,9 +303,13 @@ export const changeEvents = pgTable('change_events', {
   /** Calibrated percentile of `raw` against this symbol's own history. 0-100. */
   pctl: doublePrecision('pctl').notNull(),
   tier: attentionTier('tier').notNull(),
-  /** Per-signal contributions, so WHY is reproducible from stored data alone. */
-  contributions: jsonb('contributions').$type<Record<string, number>>().notNull(),
+  /** Full per-signal contributions, so WHY is reproducible from stored data alone. */
+  contributions: jsonb('contributions').$type<StoredContribution[]>().notNull(),
   returnPct: doublePrecision('return_pct'),
+  /** The decomposition, stored so the explanation never has to be recomputed. */
+  expectedPct: doublePrecision('expected_pct'),
+  residualPct: doublePrecision('residual_pct'),
+  residualZ: doublePrecision('residual_z'),
   quality: dataQuality('quality').notNull(),
   dedupeKey: text('dedupe_key').notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),

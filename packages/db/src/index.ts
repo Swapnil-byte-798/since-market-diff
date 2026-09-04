@@ -22,3 +22,5 @@ export const sql = postgres(url, { max: 10 })
 export const db = drizzle(sql, { schema })
 export * from './schema.js'
 export { schema }
+
+export * as marketQueries from './queries/market.js'
