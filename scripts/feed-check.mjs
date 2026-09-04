@@ -7,6 +7,24 @@
  *
  *   npm run feed:check
  */
+
+// Load .env so a key in the file reaches this script without being exported.
+import { existsSync, readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
+{
+  const envPath = fileURLToPath(new URL('../.env', import.meta.url))
+  if (existsSync(envPath)) {
+    for (const raw of readFileSync(envPath, 'utf8').split('\n')) {
+      const line = raw.trim()
+      if (!line || line.startsWith('#')) continue
+      const eq = line.indexOf('=')
+      if (eq < 1) continue
+      const k = line.slice(0, eq).trim()
+      const v = line.slice(eq + 1).trim().replace(/^["']|["']$/g, '')
+      if (process.env[k] === undefined) process.env[k] = v
+    }
+  }
+}
 const UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 ' +
            '(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
 const PROBES = ['%5ENSEI', 'RELIANCE.NS']

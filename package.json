@@ -24,12 +24,13 @@
     "test": "npm run -w @since/core test && npm run -w @since/agent test",
     "typecheck": "node scripts/typecheck.mjs",
     "smoke": "tsx scripts/smoke-brief.ts",
-    "setup": "npm run db:up && npm run db:push && npm run ingest && npm run eval",
+    "setup": "npm run env:init && npm run db:up && npm run db:push && npm run ingest && npm run eval",
     "demo:reset": "tsx scripts/demo-reset.ts",
     "feed:check": "node scripts/feed-check.mjs",
     "status": "node scripts/status.mjs",
     "share": "node scripts/share.mjs",
-    "validate": "node scripts/validate.mjs"
+    "validate": "node scripts/validate.mjs",
+    "env:init": "node -e \"const fs=require('fs');if(fs.existsSync('.env')){console.log('  .env already exists \u2014 leaving it alone')}else{fs.copyFileSync('.env.example','.env');console.log('  created .env from .env.example \u2014 add your keys, it is gitignored')}\""
   },
   "devDependencies": {
     "@types/node": "^22.10.2",

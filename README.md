@@ -348,6 +348,7 @@ Audited against the specification this was built to. Nothing below is aspiration
 Everything is local. No cloud dependency, no deploy target.
 
 ```bash
+npm run env:init          # creates .env from the example — it is gitignored
 docker compose up -d db   # local Postgres on :5544, its own volume
 npm install
 npm run db:push           # apply the schema
@@ -367,6 +368,10 @@ Or the whole setup in one line: `npm run setup && npm run dev`
 `npm test` runs 68 tests across the scoring engine and the agent guards.
 
 ### Environment
+
+Put keys in `.env` at the repo root rather than exporting them by hand — it is
+gitignored, every entry point loads it automatically, and a real environment
+variable still overrides it.
 
 | Variable | Default | Purpose |
 |---|---|---|

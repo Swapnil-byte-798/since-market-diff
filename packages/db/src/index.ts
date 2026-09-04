@@ -5,6 +5,12 @@
 import { drizzle } from 'drizzle-orm/postgres-js'
 import postgres from 'postgres'
 import * as schema from './schema.js'
+import { loadEnvFile } from './env.js'
+
+// Must run before any process.env lookup below. Every entry point — the API,
+// the ingest CLI, the evaluation harness — imports this module, so a key placed
+// in .env reaches all of them without being exported by hand.
+loadEnvFile()
 
 const DEFAULT_LOCAL_URL = 'postgresql://since:since@localhost:5544/since'
 const url = process.env.DATABASE_URL ?? DEFAULT_LOCAL_URL
