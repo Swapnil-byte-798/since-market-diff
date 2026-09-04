@@ -36,6 +36,17 @@ const DEMO_EMAIL = 'demo@since.local'
 /** A realistic watchlist: big enough that filtering is visibly doing work. */
 const DEMO_WATCHLIST_SIZE = 30
 
+/**
+ * Symbols carrying injected data-quality faults.
+ *
+ * STALE_FEED_SYMBOL gets NO closing-price observation written for it. That is
+ * what a stopped feed actually means — and without it the fault silently expires
+ * at 15:30 when the session-close observation lands and supersedes it, turning
+ * the "stale data" scenario back into a healthy one mid-demo.
+ */
+const STALE_FEED_SYMBOL = 'RELIANCE.NS'
+const CONFLICT_SYMBOL = 'ONGC.NS'
+
 async function main(): Promise<void> {
   const t0 = Date.now()
   const today = new Date()
@@ -171,7 +182,10 @@ async function main(): Promise<void> {
         },
       })
 
-      await writeLatestObservation(id, bars, provider.source)
+      // A symbol whose feed is meant to be dead must not receive a fresh one.
+      if (id !== STALE_FEED_SYMBOL || !WITH_FAULTS) {
+        await writeLatestObservation(id, bars, provider.source)
+      }
       ingested++
       if (ingested % 10 === 0) log(`  ...${ingested}/${UNIVERSE.length} symbols`)
     } catch (err) {
@@ -305,8 +319,8 @@ async function injectFaults(indexBars: readonly DailyBar[]): Promise<void> {
   // 1. A feed that stopped days ago -> STALE -> alerts suppressed.
   //    Anchored to the dataset, so it is stale no matter when you look.
   await db.insert(schema.observations).values({
-    id: 'RELIANCE.NS:fault-injection:stale',
-    symbolId: 'RELIANCE.NS', price: null, volume: null,
+    id: `${STALE_FEED_SYMBOL}:fault-injection:stale`,
+    symbolId: STALE_FEED_SYMBOL, price: null, volume: null,
     observedAt: new Date(sessionClose.getTime() - 3 * 86400_000),
     receivedAt: new Date(), source: 'fault-injection', quality: 'STALE',
     raw: { injected: true, scenario: 'stale-feed' },
@@ -320,14 +334,14 @@ async function injectFaults(indexBars: readonly DailyBar[]): Promise<void> {
   //    evaluate, both sources are equally fresh and genuinely disagree.
   const recent = await db.select({ ts: schema.intradayBars.ts, close: schema.intradayBars.close })
     .from(schema.intradayBars)
-    .where(eq(schema.intradayBars.symbolId, 'ONGC.NS'))
+    .where(eq(schema.intradayBars.symbolId, CONFLICT_SYMBOL))
     .orderBy(desc(schema.intradayBars.ts))
     .limit(120)
 
   if (recent.length > 0) {
     const rows = recent.map((r) => ({
-      id: `ONGC.NS:fault-injection:${r.ts.toISOString()}`,
-      symbolId: 'ONGC.NS',
+      id: `${CONFLICT_SYMBOL}:fault-injection:${r.ts.toISOString()}`,
+      symbolId: CONFLICT_SYMBOL,
       price: Math.round(r.close * 0.972 * 100) / 100,   // 2.8% apart: past tolerance
       volume: null,
       observedAt: r.ts,
@@ -341,8 +355,8 @@ async function injectFaults(indexBars: readonly DailyBar[]): Promise<void> {
     // The primary source needs a matching observation at each of those instants,
     // or there is nothing for the injected one to conflict WITH.
     const primary = recent.map((r) => ({
-      id: `ONGC.NS:primary:${r.ts.toISOString()}`,
-      symbolId: 'ONGC.NS', price: r.close, volume: null,
+      id: `${CONFLICT_SYMBOL}:primary:${r.ts.toISOString()}`,
+      symbolId: CONFLICT_SYMBOL, price: r.close, volume: null,
       observedAt: r.ts, receivedAt: new Date(),
       source: 'market-feed', quality: 'FRESH' as const,
       raw: { kind: 'intraday' },
@@ -350,7 +364,8 @@ async function injectFaults(indexBars: readonly DailyBar[]): Promise<void> {
     for (const chunk of chunks(primary, 200)) await db.insert(schema.observations).values(chunk).onConflictDoNothing()
   }
 
-  log(`injected data-quality faults: RELIANCE.NS stale, ONGC.NS conflicting (${recent.length} instants)`)
+  log(`injected data-quality faults: ${STALE_FEED_SYMBOL} stale (no live observation), ` +
+      `${CONFLICT_SYMBOL} conflicting (${recent.length} instants)`)
 }
 
 /* ----------------------------------------------------------------- helpers */

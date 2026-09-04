@@ -26,7 +26,8 @@
     "smoke": "tsx scripts/smoke-brief.ts",
     "setup": "npm run db:up && npm run db:push && npm run ingest && npm run eval",
     "demo:reset": "tsx scripts/demo-reset.ts",
-    "feed:check": "node scripts/feed-check.mjs"
+    "feed:check": "node scripts/feed-check.mjs",
+    "status": "node scripts/status.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",
