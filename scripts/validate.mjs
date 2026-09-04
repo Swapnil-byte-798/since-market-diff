@@ -70,8 +70,12 @@ note('A', 'Evaluation ran on real data', evalReport?.dataset?.simulated === fals
   evalReport ? `dataset: ${evalReport.dataset.provider}` : 'no report')
 
 /* ---------------------------------------------- B. live agent ------------ */
-const hasKey = Boolean(process.env.ANTHROPIC_API_KEY)
-note('B', 'ANTHROPIC_API_KEY is set', hasKey, hasKey ? 'agent will call the model' : 'agent falls back to deterministic')
+const gem = Boolean(process.env.GEMINI_API_KEY ?? process.env.GOOGLE_API_KEY)
+const ant = Boolean(process.env.ANTHROPIC_API_KEY)
+const which = process.env.AGENT_PROVIDER ?? (gem ? 'gemini' : ant ? 'anthropic' : 'none')
+note('B', 'An LLM provider is configured', gem || ant,
+  gem || ant ? `${which} (${gem ? 'GEMINI_API_KEY' : 'ANTHROPIC_API_KEY'} set)`
+             : 'no key — agent falls back to the deterministic engine')
 
 const brief = (await get('/api/brief', jar)).body
 

@@ -3,6 +3,7 @@ import { lintConclusion, checkNumericGrounding } from '../src/guards.js'
 import { deterministicConclusion, AGENT_UNAVAILABLE_NOTE } from '../src/fallback.js'
 import { conclusionSchema, findingSchema } from '../src/schema.js'
 import { investigate } from '../src/loop.js'
+import { resolveProvider } from '../src/llm/index.js'
 import type { ScoreResult } from '@since/core'
 
 const score: ScoreResult = {
@@ -77,13 +78,38 @@ describe('deterministic fallback', () => {
   })
 })
 
+describe('provider selection', () => {
+  it('prefers Gemini when both keys are present — its free tier is the point', () => {
+    const p = resolveProvider({ GEMINI_API_KEY: 'g', ANTHROPIC_API_KEY: 'a' } as NodeJS.ProcessEnv)
+    expect(p?.name).toBe('gemini')
+  })
+
+  it('falls back to Anthropic when only that key is set', () => {
+    expect(resolveProvider({ ANTHROPIC_API_KEY: 'a' } as NodeJS.ProcessEnv)?.name).toBe('anthropic')
+  })
+
+  it('honours an explicit override', () => {
+    const env = { AGENT_PROVIDER: 'anthropic', GEMINI_API_KEY: 'g', ANTHROPIC_API_KEY: 'a' }
+    expect(resolveProvider(env as NodeJS.ProcessEnv)?.name).toBe('anthropic')
+  })
+
+  it('returns null with no keys, which is a normal outcome', () => {
+    expect(resolveProvider({} as NodeJS.ProcessEnv)).toBeNull()
+  })
+
+  it('returns null when a forced provider has no key, rather than silently using the other', () => {
+    const env = { AGENT_PROVIDER: 'gemini', ANTHROPIC_API_KEY: 'a' }
+    expect(resolveProvider(env as NodeJS.ProcessEnv)).toBeNull()
+  })
+})
+
 describe('agent availability', () => {
-  it('returns a usable result with no API key and makes no network call', async () => {
+  it('returns a usable result with no provider and makes no network call', async () => {
     const r = await investigate({
       symbolId: 'HDFCBANK.NS', symbolName: 'HDFC Bank',
       windowStart: new Date('2026-09-04T04:44:00Z'), windowEnd: new Date('2026-09-04T10:00:00Z'),
       benchmarkId: '^NSEI', score,
-    }, { apiKey: undefined })
+    }, { provider: null })
 
     expect(r.status).toBe('COMPLETED')
     expect(r.fallbackUsed).toBe(true)

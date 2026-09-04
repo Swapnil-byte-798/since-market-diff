@@ -1,5 +1,8 @@
-import Anthropic from '@anthropic-ai/sdk'
 import type { ScoreResult } from '@since/core'
+import {
+  resolveProvider, LlmUnavailable,
+  type LlmProvider, type LlmMessage, type LlmToolDef, type LlmToolResult,
+} from './llm/index.js'
 import { TOOLS, TOOL_BY_NAME, type ToolContext } from './tools/index.js'
 import {
   findingSchema, conclusionSchema, HYPOTHESES, HYPOTHESIS_LABEL,
@@ -11,7 +14,6 @@ import { deterministicConclusion, AGENT_UNAVAILABLE_NOTE } from './fallback.js'
 /** Hard caps. An investigation that cannot finish inside these is a failed one. */
 export const MAX_TOOL_CALLS = 10
 export const DEADLINE_MS = 45_000
-export const MODEL = process.env.AGENT_MODEL ?? 'claude-opus-5'
 
 export interface InvestigationInput {
   symbolId: string
@@ -86,7 +88,8 @@ export async function investigate(
   opts: {
     onStage?: (s: Stage) => void
     onTrail?: (step: TrailStep) => void
-    apiKey?: string | undefined
+    /** Override provider selection; omit to resolve from the environment. */
+    provider?: LlmProvider | null
   } = {},
 ): Promise<InvestigationResult> {
   const stages: Stage[] = []
@@ -100,8 +103,8 @@ export async function investigate(
     hasEvent: input.hasEvent ?? false,
   })
 
-  const apiKey = opts.apiKey ?? process.env.ANTHROPIC_API_KEY
-  if (!apiKey) {
+  const provider = opts.provider !== undefined ? opts.provider : resolveProvider()
+  if (!provider) {
     // Not a fake trail: these steps describe work the deterministic engine
     // genuinely did. What is missing is the model, and the UI says so.
     return {
@@ -111,7 +114,6 @@ export async function investigate(
     }
   }
 
-  const client = new Anthropic({ apiKey, timeout: DEADLINE_MS, maxRetries: 1 })
   const ctx: ToolContext = {
     symbolId: input.symbolId, symbolName: input.symbolName,
     windowStart: input.windowStart, windowEnd: input.windowEnd,
@@ -127,9 +129,9 @@ export async function investigate(
   const guardRejections: string[] = []
   let conclusion: Conclusion | null = null
 
-  const messages: Anthropic.MessageParam[] = [{
+  const history: LlmMessage[] = [{
     role: 'user',
-    content:
+    text:
       `Investigate this detected change.\n\n` +
       `Symbol: ${input.symbolName} (${input.symbolId})\n` +
       `Window: ${input.windowStart.toISOString()} to ${input.windowEnd.toISOString()}\n` +
@@ -141,8 +143,14 @@ export async function investigate(
       `Determine which hypothesis best explains it.`,
   }]
 
-  const tools: Anthropic.Tool[] = TOOLS.map((t) => ({
-    name: t.name, description: t.description, input_schema: t.input_schema as Anthropic.Tool.InputSchema,
+  const tools: LlmToolDef[] = TOOLS.map((t) => ({
+    name: t.name,
+    description: t.description,
+    parameters: {
+      type: 'object',
+      properties: t.input_schema.properties,
+      required: t.input_schema.required,
+    },
   }))
 
   const deadline = Date.now() + DEADLINE_MS
@@ -150,40 +158,32 @@ export async function investigate(
 
   try {
     while (toolCalls.length < MAX_TOOL_CALLS && Date.now() < deadline) {
-      const response = await client.messages.create({
-        model: MODEL,
-        max_tokens: 4096,
-        system: SYSTEM,
-        thinking: { type: 'adaptive' },
-        output_config: { effort: 'medium' },
-        tools,
-        messages,
-      })
+      const response = await provider.turn({ system: SYSTEM, history, tools })
 
-      if (response.stop_reason === 'refusal') {
+      if (response.stop === 'refusal') {
         return failWith(fallback, stages, toolCalls, trail, 'The model declined to investigate this item.', guardRejections)
       }
-      if (response.stop_reason === 'end_turn') break
+      if (response.stop === 'end') break
 
-      const uses = response.content.filter((b): b is Anthropic.ToolUseBlock => b.type === 'tool_use')
+      const uses = response.toolCalls
       if (uses.length === 0) break
 
-      messages.push({ role: 'assistant', content: response.content })
-      const results: Anthropic.ToolResultBlockParam[] = []
+      history.push({ role: 'assistant', text: response.text, toolCalls: uses })
+      const results: LlmToolResult[] = []
 
       for (const use of uses) {
         const def = TOOL_BY_NAME.get(use.name)
         if (!def) {
-          results.push({ type: 'tool_result', tool_use_id: use.id, is_error: true, content: 'Unknown tool.' })
+          results.push({ id: use.id, name: use.name, content: 'Unknown tool.', isError: true })
           continue
         }
         onStage(def.stage)
         toolCalls.push({ name: use.name, input: use.input, at: new Date().toISOString() })
 
         try {
-          const out = await def.run(use.input as Record<string, unknown>, ctx)
+          const out = await def.run(use.input, ctx)
 
-          const input = use.input as Record<string, unknown>
+          const input = use.input
           let narrowedBy: string | undefined
           if (use.name === 'get_intraday_shape') {
             shapeFinding = (out as { shape?: string }).shape ?? null
@@ -222,21 +222,22 @@ export async function investigate(
           }
 
           evidenceTexts.push(JSON.stringify(out))
-          results.push({ type: 'tool_result', tool_use_id: use.id, content: JSON.stringify(out) })
+          results.push({ id: use.id, name: use.name, content: JSON.stringify(out) })
         } catch (err) {
           results.push({
-            type: 'tool_result', tool_use_id: use.id, is_error: true,
+            id: use.id, name: use.name, isError: true,
             content: `Tool failed: ${(err as Error).message}`,
           })
         }
       }
 
-      messages.push({ role: 'user', content: results })
+      history.push({ role: 'tool', results })
       if (conclusion) break
     }
   } catch (err) {
-    if (err instanceof Anthropic.APIError) {
-      return failWith(fallback, stages, toolCalls, trail, `AI investigation unavailable (${err.status}).`, guardRejections)
+    if (err instanceof LlmUnavailable) {
+      const detail = err.status ? ` (${err.status})` : ''
+      return failWith(fallback, stages, toolCalls, trail, `AI investigation unavailable${detail}.`, guardRejections)
     }
     return failWith(fallback, stages, toolCalls, trail, AGENT_UNAVAILABLE_NOTE, guardRejections)
   }

@@ -242,3 +242,27 @@ ones.
 **Tradeoff.** In-memory counters, so the limits are per-process and reset on
 restart. Correct for a single local process; a multi-instance deployment would
 point the limiter at the Redis that DECISIONS #9 already describes.
+
+---
+
+### 17. The agent is provider-neutral, and defaults to Gemini.
+
+**Decision.** A small `LlmProvider` interface — one turn of a tool-using
+conversation — with implementations for Gemini and Claude. `resolveProvider()`
+picks Gemini when a key is present, Claude otherwise, and returning `null` is a
+normal outcome that puts the loop on its deterministic path.
+
+**Why.** The investigation is the differentiating feature here, and it should not
+be gated behind a paid account; Gemini's free tier makes it reachable. More
+importantly, the interesting logic — hypothesis elimination, the caps, the output
+guards, the branch attribution — is not vendor-specific, and had no business
+being written against one SDK's types.
+
+**Tradeoff.** Three mismatches had to be absorbed inside the Gemini adapter
+rather than leaking into the loop: its function calls carry no correlation id, so
+results are matched positionally; its schema dialect rejects
+`additionalProperties` and requires a parameterless function to omit `parameters`
+entirely; and tool results are `functionResponse` parts on a user turn rather
+than a role of their own. Neither adapter has been exercised against a live model
+— no key was available on the build machine — so the first real run is the real
+test.

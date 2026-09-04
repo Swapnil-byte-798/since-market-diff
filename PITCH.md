@@ -1,13 +1,13 @@
 # Since — 100-word pitch
 
 > Every watchlist shows what your stocks are worth. Since shows what changed since
-> *you* last looked, and hides everything that didn't. It strips out the part of each
-> move the market explains and ranks only the remainder — so on a day the
-> index falls 2.4% and 28 of your 30 stocks fall with it, Since surfaces the three
-> that fell for their own reasons. Scores are percentiles against each stock's own
-> history, so 97 means "about seven days a year". On 298 held-out sessions of real
-> market data, Precision@3 is 0.312 against 0.225 for percentage-change ranking.
-> Untrusted data suppresses alerts rather than guessing.
+> *you* last looked, and hides the rest. It strips out the part the market
+> explains and ranks only the remainder — so when the index falls 2.4% and
+> 28 of your 30 stocks fall with it, Since surfaces the three that fell for their
+> own reasons. Scores are percentiles against each stock's own history, so 97 means
+> "about seven days a year". Across 298 held-out sessions of real market data,
+> Precision@3 is 0.312 against 0.225 for ranking by percentage change. Untrusted
+> data suppresses alerts rather than guessing.
 
 ---
 

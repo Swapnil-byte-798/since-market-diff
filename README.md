@@ -351,6 +351,7 @@ Audited against the specification this was built to. Nothing below is aspiration
 | All 18 specified API endpoints (20 total) | done |
 | 69 tests, 7 packages typechecked, production build clean | done |
 | Agent: hypothesis elimination, 9 typed tools, guards, deterministic fallback | **code complete; never run against a live model** |
+| Provider-neutral LLM layer (Gemini + Anthropic) | done |
 | Evaluation on real market data | done — 753 sessions, Twelve Data |
 | Real NSE prices in the demo | **blocked — every free NSE feed gated or IP-banned** |
 | Frontend component tests | not done, deliberately |
@@ -390,7 +391,9 @@ variable still overrides it.
 |---|---|---|
 | `DATABASE_URL` | `postgresql://since:since@localhost:5544/since` | Local Postgres. **Non-loopback hosts are rejected at the client.** |
 | `TWELVEDATA_API_KEY` | — | Real NSE data. [Free key](https://twelvedata.com/pricing), 800 req/day; an ingest needs ~102. |
-| `ANTHROPIC_API_KEY` | — | Enables the agent. Everything works without it. |
+| `GEMINI_API_KEY` | — | Enables the agent. [Free key](https://aistudio.google.com/apikey). Preferred when both are set. |
+| `ANTHROPIC_API_KEY` | — | Alternative agent provider. |
+| `AGENT_PROVIDER` | auto | `gemini` \| `anthropic` \| `none` |
 | `AGENT_MODEL` | `claude-opus-5` | Investigation model |
 | `PORT` | `4000` | API port |
 | `COOKIE_SECRET` | dev default | Session cookie signing |
