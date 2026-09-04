@@ -24,6 +24,14 @@ export const MAX_TOOL_CALLS = 10
 /** Absolute ceiling across all calls, so a loop still cannot run away. */
 export const MAX_TOTAL_CALLS = 20
 /**
+ * Most tool calls a single turn may make.
+ *
+ * Asking for parallel calls cut the number of turns, but it also let one turn
+ * emit 29 copies of the same call — the between-turns ceiling never got a
+ * chance to stop it. A cap that is only checked between iterations is not a cap.
+ */
+export const MAX_CALLS_PER_TURN = 6
+/**
  * Generous, because a free-tier provider paces requests rather than refusing
  * them: an investigation that waits out a rate limit is worth more than one
  * that gives up and falls back.
@@ -82,7 +90,8 @@ ${HYPOTHESES.map((h) => `  ${h} — ${HYPOTHESIS_LABEL[h]}`).join('\n')}
 
 How to investigate:
 - Start with get_move_decomposition. It tells you how much of the move the market already explains.
-- Call independent tools TOGETHER in one step rather than one at a time. Volume, corporate actions, data health and the intraday shape do not depend on each other, so request them at once. Only the event search should wait, because where you look depends on what the intraday shape says.
+- Call independent tools together in one step rather than one at a time, but AT MOST FOUR AT ONCE and never the same tool twice. Volume, corporate actions, data health and the intraday shape do not depend on each other, so request them together. Only the event search should wait, because where you look depends on what the intraday shape says.
+- Every tool answers once. If you have already called something, you have its answer; calling it again tells you nothing and wastes the budget.
 - Let each result choose your next call. If get_intraday_shape reports a CONCENTRATED move, search for events in a narrow range around that minute. If it reports CONTINUOUS_DRIFT, a discrete event is unlikely and peer behaviour matters more. Do not run a fixed checklist.
 - Call record_finding once for each hypothesis you can actually decide. You do not have to evaluate all five.
 - Finish with submit_conclusion.
@@ -141,6 +150,15 @@ export async function investigate(
 
   const toolCalls: InvestigationResult['toolCalls'] = []
   const trail: TrailStep[] = []
+  /**
+   * Results of calls already made, keyed by tool and arguments.
+   *
+   * A model that repeats an identical call is not gathering evidence, it is
+   * stuck. Returning the cached answer costs nothing, keeps the transcript
+   * honest, and — because repeats do not consume budget — lets the run continue
+   * to something useful instead of being killed by its own loop.
+   */
+  const seen = new Map<string, string>()
   /** Remembers the shape finding, so a later narrowed search can be attributed. */
   let shapeFinding: string | null = null
   const findings: Finding[] = []
@@ -177,7 +195,10 @@ export async function investigate(
 
   try {
     let evidenceCalls = 0
-    while (evidenceCalls < MAX_TOOL_CALLS
+    let repeats = 0
+    let loopingOut = false
+    while (!loopingOut
+           && evidenceCalls < MAX_TOOL_CALLS
            && toolCalls.length < MAX_TOTAL_CALLS
            && Date.now() < deadline) {
       const response = await provider.turn({ system: SYSTEM, history, tools })
@@ -190,10 +211,28 @@ export async function investigate(
       const uses = response.toolCalls
       if (uses.length === 0) break
 
-      history.push({ role: 'assistant', text: response.text, toolCalls: uses })
+      // Duplicates inside a single turn are over-eager batching, not a stuck
+      // loop: the model asked for the same thing twice in one breath, having
+      // seen neither answer yet. Collapse them silently. Only a repeat ACROSS
+      // turns — asking again after being told — means it is stuck.
+      const withinTurn = new Set<string>()
+      const deduped = uses.filter((u) => {
+        const fp = `${u.name}:${JSON.stringify(u.input)}`
+        if (withinTurn.has(fp)) return false
+        withinTurn.add(fp)
+        return true
+      })
+
+      // Truncate rather than refuse: a turn that over-asks still contains useful
+      // calls, and the model recovers from a shorter answer better than an error.
+      const budgeted = deduped.slice(0, Math.min(
+        MAX_CALLS_PER_TURN,
+        Math.max(1, MAX_TOTAL_CALLS - toolCalls.length),
+      ))
+      history.push({ role: 'assistant', text: response.text, toolCalls: budgeted })
       const results: LlmToolResult[] = []
 
-      for (const use of uses) {
+      for (const use of budgeted) {
         const def = TOOL_BY_NAME.get(use.name)
         if (!def) {
           results.push({ id: use.id, name: use.name, content: 'Unknown tool.', isError: true })
@@ -201,10 +240,22 @@ export async function investigate(
         }
         onStage(def.stage)
         toolCalls.push({ name: use.name, input: use.input, at: new Date().toISOString() })
+
+        // An identical repeat is answered from cache and costs no budget, but it
+        // is also a signal: three of them means the model is looping, not working.
+        const fingerprint = `${use.name}:${JSON.stringify(use.input)}`
+        const cached = seen.get(fingerprint)
+        if (cached !== undefined && !TERMINAL_TOOLS.has(use.name)) {
+          repeats++
+          results.push({ id: use.id, name: use.name, content: cached })
+          if (repeats >= 3) loopingOut = true
+          continue
+        }
         if (!TERMINAL_TOOLS.has(use.name)) evidenceCalls++
 
         try {
           const out = await def.run(use.input, ctx)
+          if (!TERMINAL_TOOLS.has(use.name)) seen.set(fingerprint, JSON.stringify(out))
 
           const input = use.input
           let narrowedBy: string | undefined
@@ -256,6 +307,10 @@ export async function investigate(
 
       history.push({ role: 'tool', results })
       if (conclusion) break
+      if (loopingOut) {
+        return failWith(fallback, stages, toolCalls, trail,
+          'The investigation repeated itself without making progress.', guardRejections)
+      }
     }
   } catch (err) {
     if (err instanceof LlmUnavailable) {
