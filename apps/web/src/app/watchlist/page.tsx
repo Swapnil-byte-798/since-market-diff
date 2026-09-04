@@ -1,7 +1,7 @@
 'use client'
 import { useCallback, useEffect, useState } from 'react'
 import { api, type WatchlistItem, type SymbolRow } from '@/lib/api'
-import { QualityBadge } from '@/components/Indicators'
+import { ProvenanceBadge } from '@/components/Indicators'
 import { Skeleton, ErrorState, EmptyState } from '@/components/States'
 import { rupees, ago } from '@/components/format'
 
@@ -13,7 +13,8 @@ export default function WatchlistPage() {
     setError(null)
     try {
       await api.session()
-      setItems((await api.watchlist()).items)
+      const wl = await api.watchlist()
+      setItems(wl.items)
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     }
@@ -29,8 +30,10 @@ export default function WatchlistPage() {
       <header className="pt-10">
         <h1 className="lede">Watchlist</h1>
         <p className="mt-3 max-w-prose text-[0.85rem] leading-relaxed text-ink-muted">
-          What Since watches on your behalf. Thresholds are the one signal weighted above its own
-          statistics — if you say a level matters, it matters.
+          What Since watches on your behalf. “You last viewed this” is your read cursor — the
+          moment each stock’s next brief is measured against, moved only when you actually open it.
+          Thresholds are the one signal weighted above Since’s own statistics: if you say a level
+          matters, it matters.
         </p>
       </header>
 
@@ -108,12 +111,15 @@ function Row({ item, onChanged }: { item: WatchlistItem; onChanged: () => void }
         <div className="min-w-0">
           <div className="text-[0.95rem] text-ink">{item.name}</div>
           <div className="mt-0.5 text-[0.72rem] text-ink-faint">
-            {item.ticker} · last seen {ago(item.lastSeenAt)}
+            {item.ticker} · you last viewed this {ago(item.lastSeenAt)}
           </div>
         </div>
         <div className="text-right">
           <div className="tnum text-[0.95rem] text-ink">{rupees(item.price)}</div>
-          <div className="mt-0.5 text-[0.7rem] text-ink-faint">{ago(item.observedAt)}</div>
+          <div className="mt-0.5 flex items-center justify-end gap-2 text-[0.7rem] text-ink-faint">
+            <ProvenanceBadge provenance={item.provenance} />
+            <span>{ago(item.observedAt)}</span>
+          </div>
         </div>
       </div>
 

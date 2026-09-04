@@ -6,7 +6,7 @@ import {
   api, type ChangeDetail, type InvestigationResponse, type ReplayResponse,
 } from '@/lib/api'
 import { BandBreakout, BandLegend } from '@/components/BandBreakout'
-import { AttentionScore, Delta, QualityBadge, TierLabel } from '@/components/Indicators'
+import { AttentionScore, Delta, ProvenanceBadge, TierLabel } from '@/components/Indicators'
 import { Skeleton, ErrorState } from '@/components/States'
 import { Investigation } from '@/components/Investigation'
 import { Replay } from '@/components/Replay'
@@ -67,7 +67,7 @@ export default function ChangePage() {
           <div className="font-serif text-4xl leading-none">
             <Delta value={c.returnPct} />
           </div>
-          <QualityBadge quality={c.quality} />
+          <ProvenanceBadge provenance={detail.provenance} reason={String(c.quality)} />
         </div>
       </header>
 

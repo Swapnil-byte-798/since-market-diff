@@ -167,12 +167,27 @@ describe('diff window', () => {
     expect(w.awayLabel).toBe('your first look')
   })
 
+  it('travels back to a past moment instead of returning an empty window', () => {
+    // Regression: time-travelling to before the cursor collapsed the window to
+    // zero width, so replay showed nothing and looked broken.
+    const w = resolveWindow({
+      lastSeenAt: new Date('2026-08-14T04:44:00Z'),
+      at: new Date('2026-08-12T10:00:00Z'),      // two sessions earlier
+      calendar: cal,
+    })
+    expect(w.isReplay).toBe(true)
+    expect(w.awayMs).toBeGreaterThan(0)
+    expect(w.windowStart.getTime()).toBeLessThan(w.windowEnd.getTime())
+    expect(w.sessions).toBeGreaterThanOrEqual(1)
+  })
+
   it('never inverts the window when a device clock runs fast', () => {
     const w = resolveWindow({
-      lastSeenAt: new Date('2026-08-20T10:00:00Z'),   // cursor from the future
+      lastSeenAt: new Date('2026-08-14T10:02:00Z'),   // 2 min of skew, not travel
       at: new Date('2026-08-14T10:00:00Z'),
       calendar: cal,
     })
+    expect(w.isReplay).toBe(false)
     expect(w.awayMs).toBe(0)
     expect(w.windowStart.getTime()).toBeLessThanOrEqual(w.windowEnd.getTime())
   })

@@ -1,7 +1,7 @@
 'use client'
 import { useCallback, useEffect, useState } from 'react'
 import { api, type DataHealth } from '@/lib/api'
-import { QualityBadge } from '@/components/Indicators'
+import { ProvenanceBadge } from '@/components/Indicators'
 import { Skeleton, ErrorState } from '@/components/States'
 import { rupees, ago } from '@/components/format'
 import { Integrity } from '@/components/Integrity'
@@ -46,7 +46,7 @@ export default function HealthPage() {
               <li key={s.symbolId} className="border-l-2 border-signal pl-3">
                 <div className="flex flex-wrap items-baseline gap-x-3">
                   <span className="text-[0.9rem] text-ink">{s.symbolId.replace('.NS', '')}</span>
-                  <QualityBadge quality={s.quality} />
+                  <ProvenanceBadge provenance={s.provenance} />
                 </div>
                 <p className="mt-0.5 text-[0.78rem] text-ink-muted">{s.reason}</p>
                 {s.values.length > 1 ? (
@@ -78,7 +78,7 @@ export default function HealthPage() {
               <span className="text-ink">{s.symbolId.replace('.NS', '')}</span>
               <span className="flex items-baseline gap-4">
                 <span className="text-[0.7rem] text-ink-faint">{s.sources.join(', ') || 'no sources'}</span>
-                <QualityBadge quality={s.quality} reason={s.reason} />
+                <ProvenanceBadge provenance={s.provenance} reason={s.reason} />
               </span>
             </li>
           ))}

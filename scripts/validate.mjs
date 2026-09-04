@@ -56,6 +56,21 @@ const hasKey = Boolean(process.env.ANTHROPIC_API_KEY)
 note('B', 'ANTHROPIC_API_KEY is set', hasKey, hasKey ? 'agent will call the model' : 'agent falls back to deterministic')
 
 const brief = (await get('/api/brief', jar)).body
+
+/**
+ * The demo is anchored to the last session close, not to wall-clock now.
+ * Mid-session there may legitimately be fewer movers, so checking scenario
+ * coverage against "now" reports absences that are not defects.
+ */
+const health0 = (await get('/health')).body
+const lastClose = (() => {
+  const d = new Date()
+  d.setUTCHours(10, 0, 0, 0)                       // 15:30 IST
+  if (d.getTime() > Date.now()) d.setUTCDate(d.getUTCDate() - 1)
+  return d.toISOString()
+})()
+const demoBrief = (await get(`/api/brief?at=${encodeURIComponent(lastClose)}`, jar)).body
+void health0
 const firstChange = brief?.cards?.[0]?.changeId ?? null
 let agentRan = false
 let agentDetail = 'no change event to investigate'
@@ -70,14 +85,16 @@ if (firstChange) {
 note('B', 'An investigation ran against a live model', agentRan, agentDetail)
 
 /* ---------------------------------------------- C. demo reliability ------ */
-note('C', 'Market-wide regime detected', Boolean(brief?.regime),
-  brief?.regime ? `${brief.regime.withMarket} of ${brief.regime.movedTotal} with the market` : 'no regime in this window')
+const regime = demoBrief?.regime ?? brief?.regime
+note('C', 'Market-wide regime detected', Boolean(regime),
+  regime ? `${regime.withMarket} of ${regime.movedTotal} with the market` : 'no regime at the demo instant')
 note('C', 'Attention cards present', (brief?.cards?.length ?? 0) > 0, `${brief?.cards?.length ?? 0} shown`)
 note('C', 'Noise is being filtered', (brief?.filteredCount ?? 0) > 0, `${brief?.filteredCount ?? 0} withheld`)
 note('C', 'A stock bucked the market', Boolean(brief?.cards?.some((c) => (c.score.returnPct ?? 0) > 0)),
   'a riser on a falling day is the clearest demonstration of the thesis')
-note('C', 'Sector grouping fires', Boolean(brief?.cards?.some((c) => c.group)),
-  brief?.cards?.find((c) => c.group)?.group?.sectorName ?? 'no group in this window')
+const grouped = demoBrief?.cards?.find((c) => c.group) ?? brief?.cards?.find((c) => c.group)
+note('C', 'Sector grouping fires (at session close)', Boolean(grouped),
+  grouped ? `${grouped.group.sectorName} x${grouped.group.members.length}` : 'no group at the demo instant')
 
 const dh = (await get('/api/data-health', jar)).body
 const qualities = new Set((dh?.symbols ?? []).map((s) => s.quality))
@@ -88,6 +105,9 @@ note('C', 'Corporate action quarantined and visible', (dh?.quarantined?.length ?
 
 if (firstChange) {
   const rep = (await get(`/api/changes/${firstChange}/replay`, jar)).body
+  note('C', 'Replay to a past session returns a brief',
+  (demoBrief?.totalWatched ?? 0) > 0 && (demoBrief?.changedCount ?? 0) > 0,
+  `${demoBrief?.attentionCount ?? 0} shown at the session close`)
   note('C', 'Replay has intraday data', (rep?.points?.length ?? 0) > 10, `${rep?.points?.length ?? 0} bars`)
   note('C', 'Replay marks the attention crossing', Boolean(rep?.attentionCrossedAt),
     rep?.attentionCrossedAt ?? 'never crossed 2 sigma in this window')

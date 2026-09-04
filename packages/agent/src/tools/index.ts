@@ -35,6 +35,16 @@ export interface ToolDef {
   input_schema: { type: 'object'; properties: Record<string, unknown>; required: string[]; additionalProperties: false }
   stage: Stage
   run: (input: Record<string, unknown>, ctx: ToolContext) => Promise<unknown>
+  /** Short label for what this call DID, and what it found. Shown in the trail. */
+  label: string
+  /**
+   * One line describing the finding, derived from the tool's own output.
+   *
+   * This is what makes the investigation legible: a reader can see that the
+   * intraday shape came back CONCENTRATED and that the event search was
+   * consequently narrowed, rather than being told that reasoning happened.
+   */
+  headline?: (out: unknown, input: Record<string, unknown>) => string
 }
 
 const noArgs = { type: 'object' as const, properties: {}, required: [], additionalProperties: false as const }
@@ -46,6 +56,12 @@ export const TOOLS: ToolDef[] = [
       'Split the move over the investigation window into the part the broad market explains (beta x index return) and the residual it does not. Returns beta, both returns, the residual and how many robust sigmas it represents. Start here.',
     input_schema: noArgs,
     stage: 'COMPARING_MARKET',
+    label: 'Decomposed the move',
+    headline: (o) => {
+      const r = o as { beta: number | null; residual_sigmas: number | null; index_return_pct: number | null }
+      if (r.residual_sigmas === null) return 'could not decompose - missing prices'
+      return `beta ${r.beta?.toFixed(2) ?? 'n/a'} - ${Math.abs(r.residual_sigmas).toFixed(1)}σ unexplained by the market`
+    },
     async run(_i, ctx) {
       const [start, end, iStart, iEnd] = await Promise.all([
         q.priceAt(ctx.symbolId, ctx.windowStart), q.priceAt(ctx.symbolId, ctx.windowEnd),
@@ -75,6 +91,12 @@ export const TOOLS: ToolDef[] = [
       'Compare this symbol against every other stock in its sector over the same window. Returns each peer\'s market-adjusted residual and the sector median. Use this to test whether a sector-wide move explains what happened.',
     input_schema: noArgs,
     stage: 'CHECKING_SECTOR',
+    label: 'Compared sector peers',
+    headline: (o) => {
+      const r = o as { peers?: unknown[]; sector_median_residual_pct: number | null }
+      if (!r.peers?.length) return 'no sector peers on record'
+      return `${r.peers.length} peers - sector median residual ${r.sector_median_residual_pct?.toFixed(2) ?? 'n/a'}%`
+    },
     async run(_i, ctx) {
       const peers = await q.peersOf(ctx.symbolId)
       if (peers.length === 0) return { peers: [], note: 'No sector peers on record for this symbol.' }
@@ -105,6 +127,12 @@ export const TOOLS: ToolDef[] = [
       'Traded volume for the session against its 20-session baseline. Returns the multiple of normal volume and the log-space anomaly score. Unusual volume corroborates that something happened; ordinary volume argues against it.',
     input_schema: noArgs,
     stage: 'INSPECTING_VOLUME',
+    label: 'Inspected volume',
+    headline: (o) => {
+      const r = o as { multiple_of_normal?: number; anomaly_sigmas?: number | null }
+      if (r.multiple_of_normal === undefined) return 'insufficient volume history'
+      return `${r.multiple_of_normal.toFixed(1)}x normal (${r.anomaly_sigmas?.toFixed(1) ?? '?'}σ)`
+    },
     async run(_i, ctx) {
       const to = istDate(ctx.windowEnd)
       const from = new Date(ctx.windowEnd.getTime() - 40 * 86400_000).toISOString().slice(0, 10)
@@ -129,6 +157,17 @@ export const TOOLS: ToolDef[] = [
       'How the move was distributed WITHIN the window, using 5-minute bars. Returns the single largest bar, what share of the total move it carried, and whether the move was concentrated in one moment or spread as continuous drift. A concentrated move points at a discrete event at a specific minute; drift points at sector or flow effects.',
     input_schema: noArgs,
     stage: 'READING_INTRADAY_SHAPE',
+    label: 'Read the intraday shape',
+    headline: (o) => {
+      const r = o as { shape?: string; share_of_move_in_largest_bar?: number; largest_bar?: { at: string } }
+      if (!r.shape) return 'no intraday data for this window'
+      if (r.shape === 'CONCENTRATED') {
+        const pctShare = Math.round((r.share_of_move_in_largest_bar ?? 0) * 100)
+        const at = r.largest_bar?.at?.slice(11, 16) ?? '?'
+        return `CONCENTRATED - ${pctShare}% of the move in one bar at ${at} UTC`
+      }
+      return r.shape === 'MIXED' ? 'MIXED - partly concentrated' : 'CONTINUOUS DRIFT - no single trigger'
+    },
     async run(_i, ctx) {
       const bars: IntradayBar[] = await q.intradayBetween(ctx.symbolId, ctx.windowStart, ctx.windowEnd)
       if (bars.length < 3) return { note: 'No intraday data for this window.', bars: bars.length }
@@ -170,6 +209,15 @@ export const TOOLS: ToolDef[] = [
       additionalProperties: false,
     },
     stage: 'INVESTIGATING_EVENTS',
+    label: 'Searched for events',
+    headline: (o, i) => {
+      const r = o as { count: number }
+      const from = typeof i.from === 'string' ? i.from.slice(11, 16) : '?'
+      const to = typeof i.to === 'string' ? i.to.slice(11, 16) : '?'
+      return r.count === 0
+        ? `nothing published in ${from}-${to} UTC - supports UNEXPLAINED`
+        : `${r.count} event(s) in ${from}-${to} UTC`
+    },
     async run(input, ctx) {
       const parsed = z.object({ from: z.string(), to: z.string() }).safeParse(input)
       const from = parsed.success ? safeDate(parsed.data.from, ctx.windowStart) : ctx.windowStart
@@ -194,6 +242,11 @@ export const TOOLS: ToolDef[] = [
       'Splits, bonuses and dividends with ex-dates near the window. A corporate action makes the raw price move an artefact rather than news — check this before concluding anything about a very large move.',
     input_schema: noArgs,
     stage: 'CHECKING_CORPORATE_ACTIONS',
+    label: 'Checked corporate actions',
+    headline: (o) => {
+      const r = o as { count: number }
+      return r.count === 0 ? 'none on record - not a data artefact' : `${r.count} action(s) near this window`
+    },
     async run(_i, ctx) {
       const to = istDate(ctx.windowEnd)
       const from = new Date(ctx.windowStart.getTime() - 10 * 86400_000).toISOString().slice(0, 10)
@@ -213,6 +266,11 @@ export const TOOLS: ToolDef[] = [
       'Provenance and freshness of the prices behind this investigation: sources, observation timestamps, and whether they agree. Use it before asserting anything numeric with confidence.',
     input_schema: noArgs,
     stage: 'VERIFYING_DATA_HEALTH',
+    label: 'Verified data health',
+    headline: (o) => {
+      const r = o as { distinct_sources: number; observations?: unknown[] }
+      return `${r.distinct_sources} source(s), ${r.observations?.length ?? 0} observation(s)`
+    },
     async run(_i, ctx) {
       const obs = await q.observationsFor([ctx.symbolId], ctx.windowEnd)
       const list = obs.get(ctx.symbolId) ?? []
@@ -254,6 +312,8 @@ export const TOOLS: ToolDef[] = [
       additionalProperties: false,
     },
     stage: 'RECORDING_FINDING',
+    label: 'Recorded a finding',
+    headline: (_o, i) => `${String(i.hypothesis)} - ${String(i.verdict).toLowerCase()}`,
     async run(input) {
       const parsed = findingSchema.safeParse(input)
       if (!parsed.success) return { accepted: false, error: parsed.error.issues.map((i) => i.message).join('; ') }
@@ -276,6 +336,8 @@ export const TOOLS: ToolDef[] = [
       additionalProperties: false,
     },
     stage: 'FORMING_CONCLUSION',
+    label: 'Formed a conclusion',
+    headline: (_o, i) => `${String(i.primary_hypothesis)} - confidence ${String(i.confidence).toLowerCase()}`,
     async run(input) {
       const parsed = conclusionSchema.safeParse(input)
       if (!parsed.success) return { accepted: false, error: parsed.error.issues.map((i) => i.message).join('; ') }

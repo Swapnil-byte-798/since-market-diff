@@ -438,7 +438,12 @@ Every one of those would have made the feature list longer and the product worse
 6. **No auth.** A signed cookie names the demo user. Deliberate, and not shippable.
 7. **Rate limits are in-process.** Correct for one local process; a multi-instance
    deployment would point the limiter at the Redis described in DECISIONS #9.
-8. **No frontend component tests.** The scoring engine and agent guards are tested;
+8. **Replay display carries lookahead.** Ingestion stores one statistics row per
+   symbol, so replaying a past date reuses statistics computed from the full
+   history rather than only what was known then. It affects what replay *shows*;
+   it does not touch the evaluation harness, which computes its own point-in-time
+   statistics and never reads that table — the measured Precision@3 stays causal.
+9. **No frontend component tests.** The scoring engine and agent guards are tested;
    the React layer is verified manually. A deliberate trade, stated rather than hidden.
 
 ## With another week

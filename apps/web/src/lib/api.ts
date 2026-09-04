@@ -59,6 +59,9 @@ export const api = {
 
 export type Tier = 'NORMAL' | 'WORTH_WATCHING' | 'SIGNIFICANT' | 'CRITICAL' | 'SUPPRESSED'
 export type Quality = 'FRESH' | 'DELAYED' | 'STALE' | 'UNAVAILABLE' | 'CONFLICTING' | 'SUSPECT'
+export type Provenance =
+  | 'NSE' | 'SIMULATED' | 'REPLAY' | 'DELAYED'
+  | 'STALE' | 'UNAVAILABLE' | 'CONFLICTING' | 'SUSPECT'
 
 export interface Contribution {
   key: string; label: string; z: number; weight: number; points: number; detail: string
@@ -75,6 +78,7 @@ export interface ScoreText { text: string; saturated: boolean }
 export interface Card {
   symbolId: string; score: Score; frequency: string; changeId: string | null
   scoreText?: ScoreText
+  provenance?: Provenance
   group?: { sectorId: string; sectorName: string; members: string[] }
 }
 export interface Brief {
@@ -85,19 +89,22 @@ export interface Brief {
   regime: { active: boolean; indexReturnPct: number; breadth: number
     withMarket: number; movedTotal: number; headline: string } | null
   cards: Card[]
-  suppressed: { symbolId: string; quality: Quality; reason: string }[]
+  suppressed: { symbolId: string; quality: Quality; reason: string; provenance?: Provenance }[]
   budget: string; budgetLabel: string; budgetThreshold: number; cap: number
   symbolNames: Record<string, string>
   sectors: Record<string, { id: string; name: string } | null>
-  simulated: boolean; provider: string
+  simulated: boolean; provider: string; isReplay?: boolean
 }
 export interface SymbolRow { id: string; ticker: string; name: string; sectorId: string | null }
 export interface WatchlistItem extends SymbolRow {
   symbolId: string; position: number; price: number | null; observedAt: string | null
-  sources: string[]; lastSeenAt: string | null
+  sources: string[]; lastSeenAt: string | null; provenance?: Provenance
   threshold: { kind: 'ABOVE' | 'BELOW'; value: number } | null
 }
-export interface WatchlistResponse { watchlistId: string | null; items: WatchlistItem[] }
+export interface WatchlistResponse {
+  watchlistId: string | null; items: WatchlistItem[]
+  provider?: string; simulated?: boolean
+}
 export interface ChangeDetail {
   change: {
     id: string; symbolId: string; windowStart: string; windowEnd: string
@@ -107,6 +114,7 @@ export interface ChangeDetail {
   symbol: SymbolRow | null
   frequency: string
   scoreText?: ScoreText
+  provenance?: Provenance
   stats: { beta: number | null; residMad: number | null; sampleN: number; asOf: string } | null
   investigation: unknown
 }
@@ -114,12 +122,19 @@ export interface EvidenceRow {
   id: string; hypothesis: string | null; type: string; source: string
   observation: string; observedAt: string | null; stance: 'SUPPORTS' | 'CONTRADICTS' | 'NEUTRAL'
 }
+export interface TrailStep {
+  seq: number; tool: string; label: string; headline: string; at: string
+  narrowedBy?: string
+}
 export interface InvestigationResponse {
   status: string
+  stage?: string | null
+  trail?: TrailStep[]
   investigation: {
     id: string; status: string; primaryHypothesis: string | null
     hypotheses: unknown; conclusion: string | null; confidence: string | null
     toolCalls: number; fallbackUsed: boolean
+    conclusionInsufficient?: boolean
   } | null
   evidence: EvidenceRow[]
 }
@@ -140,7 +155,7 @@ export interface QuarantineRow {
 }
 export interface DataHealth {
   provider: string; simulated: boolean; marketOpen: boolean; at: string
-  symbols: { symbolId: string; quality: Quality; reason: string; ageMs: number | null; sources: string[]
+  symbols: { symbolId: string; quality: Quality; reason: string; provenance?: Provenance; ageMs: number | null; sources: string[]
     values: { source: string; price: number | null; observedAt: string }[] }[]
   quarantined: QuarantineRow[]
 }

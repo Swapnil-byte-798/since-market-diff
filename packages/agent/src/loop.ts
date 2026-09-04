@@ -25,11 +25,27 @@ export interface InvestigationInput {
   hasEvent?: boolean
 }
 
+/** One step of the investigation, as it actually happened. */
+export interface TrailStep {
+  seq: number
+  tool: string
+  label: string
+  /** What the tool found, derived from its own output. Never model prose. */
+  headline: string
+  at: string
+  /**
+   * Set when this call was narrowed by an earlier result — the visible proof
+   * that the path depended on evidence rather than following a fixed script.
+   */
+  narrowedBy?: string
+}
+
 export interface InvestigationResult {
   status: 'COMPLETED' | 'INSUFFICIENT_EVIDENCE' | 'FAILED'
   conclusion: Conclusion
   findings: Finding[]
   toolCalls: { name: string; input: unknown; at: string }[]
+  trail: TrailStep[]
   stages: Stage[]
   fallbackUsed: boolean
   note: string | null
@@ -67,7 +83,11 @@ Rules that are not negotiable:
  */
 export async function investigate(
   input: InvestigationInput,
-  opts: { onStage?: (s: Stage) => void; apiKey?: string | undefined } = {},
+  opts: {
+    onStage?: (s: Stage) => void
+    onTrail?: (step: TrailStep) => void
+    apiKey?: string | undefined
+  } = {},
 ): Promise<InvestigationResult> {
   const stages: Stage[] = []
   const onStage = (s: Stage) => { stages.push(s); opts.onStage?.(s) }
@@ -82,8 +102,11 @@ export async function investigate(
 
   const apiKey = opts.apiKey ?? process.env.ANTHROPIC_API_KEY
   if (!apiKey) {
+    // Not a fake trail: these steps describe work the deterministic engine
+    // genuinely did. What is missing is the model, and the UI says so.
     return {
-      status: 'COMPLETED', ...fallback, toolCalls: [], stages: [],
+      status: 'COMPLETED', ...fallback, toolCalls: [],
+      trail: deterministicTrail(input), stages: [],
       fallbackUsed: true, note: AGENT_UNAVAILABLE_NOTE, guardRejections: [],
     }
   }
@@ -96,6 +119,9 @@ export async function investigate(
   }
 
   const toolCalls: InvestigationResult['toolCalls'] = []
+  const trail: TrailStep[] = []
+  /** Remembers the shape finding, so a later narrowed search can be attributed. */
+  let shapeFinding: string | null = null
   const findings: Finding[] = []
   const evidenceTexts: string[] = []
   const guardRejections: string[] = []
@@ -135,7 +161,7 @@ export async function investigate(
       })
 
       if (response.stop_reason === 'refusal') {
-        return failWith(fallback, stages, toolCalls, 'The model declined to investigate this item.', guardRejections)
+        return failWith(fallback, stages, toolCalls, trail, 'The model declined to investigate this item.', guardRejections)
       }
       if (response.stop_reason === 'end_turn') break
 
@@ -156,6 +182,32 @@ export async function investigate(
 
         try {
           const out = await def.run(use.input as Record<string, unknown>, ctx)
+
+          const input = use.input as Record<string, unknown>
+          let narrowedBy: string | undefined
+          if (use.name === 'get_intraday_shape') {
+            shapeFinding = (out as { shape?: string }).shape ?? null
+          }
+          // A search confined to less than half the window was narrowed on
+          // purpose. Attributing it makes the branch visible rather than claimed.
+          if (use.name === 'search_market_events' && typeof input.from === 'string' && typeof input.to === 'string') {
+            const span = new Date(input.to).getTime() - new Date(input.from).getTime()
+            const full = input.windowMs ?? (ctx.windowEnd.getTime() - ctx.windowStart.getTime())
+            if (span > 0 && span < Number(full) * 0.5 && shapeFinding) {
+              narrowedBy = `intraday shape came back ${shapeFinding}`
+            }
+          }
+
+          const step: TrailStep = {
+            seq: trail.length + 1,
+            tool: use.name,
+            label: def.label,
+            headline: def.headline ? def.headline(out, input) : 'completed',
+            at: new Date().toISOString(),
+            ...(narrowedBy ? { narrowedBy } : {}),
+          }
+          trail.push(step)
+          opts.onTrail?.(step)
 
           if (use.name === 'record_finding') {
             const parsed = findingSchema.safeParse(use.input)
@@ -184,13 +236,13 @@ export async function investigate(
     }
   } catch (err) {
     if (err instanceof Anthropic.APIError) {
-      return failWith(fallback, stages, toolCalls, `AI investigation unavailable (${err.status}).`, guardRejections)
+      return failWith(fallback, stages, toolCalls, trail, `AI investigation unavailable (${err.status}).`, guardRejections)
     }
-    return failWith(fallback, stages, toolCalls, AGENT_UNAVAILABLE_NOTE, guardRejections)
+    return failWith(fallback, stages, toolCalls, trail, AGENT_UNAVAILABLE_NOTE, guardRejections)
   }
 
   if (!conclusion) {
-    return failWith(fallback, stages, toolCalls,
+    return failWith(fallback, stages, toolCalls, trail,
       'Investigation did not reach a conclusion within its budget.', guardRejections)
   }
 
@@ -209,7 +261,7 @@ export async function investigate(
       status: 'COMPLETED',
       conclusion: { ...fallback.conclusion, primary_hypothesis: conclusion.primary_hypothesis },
       findings: findings.length ? findings : fallback.findings,
-      toolCalls, stages, fallbackUsed: true,
+      toolCalls, trail, stages, fallbackUsed: true,
       note: 'The generated explanation failed an output guard and was replaced with the deterministic one.',
       guardRejections,
     }
@@ -220,6 +272,7 @@ export async function investigate(
     conclusion,
     findings,
     toolCalls,
+    trail,
     stages,
     fallbackUsed: false,
     note: null,
@@ -231,13 +284,39 @@ function failWith(
   fallback: { conclusion: Conclusion; findings: Finding[] },
   stages: Stage[],
   toolCalls: InvestigationResult['toolCalls'],
+  trail: TrailStep[],
   note: string,
   guardRejections: string[],
 ): InvestigationResult {
   return {
-    status: 'COMPLETED', ...fallback, toolCalls, stages,
+    status: 'COMPLETED', ...fallback, toolCalls, trail, stages,
     fallbackUsed: true, note, guardRejections,
   }
+}
+
+/** The steps the scoring engine actually performed, for the no-model path. */
+function deterministicTrail(input: InvestigationInput): TrailStep[] {
+  const now = new Date().toISOString()
+  const s = input.score
+  const steps: TrailStep[] = [{
+    seq: 1, tool: 'scoring_engine', label: 'Decomposed the move',
+    headline: s.residualZ !== null
+      ? `${Math.abs(s.residualZ).toFixed(1)}σ unexplained by the market`
+      : 'decomposition unavailable',
+    at: now,
+  }]
+  if (input.volumeMultiple) {
+    steps.push({
+      seq: steps.length + 1, tool: 'scoring_engine', label: 'Inspected volume',
+      headline: `${input.volumeMultiple.toFixed(1)}x normal`, at: now,
+    })
+  }
+  steps.push({
+    seq: steps.length + 1, tool: 'scoring_engine', label: 'Checked for events',
+    headline: input.hasEvent ? 'an event was published in this window' : 'no event on record',
+    at: now,
+  })
+  return steps
 }
 
 function fmt(v: number | null, dp = 2): string {

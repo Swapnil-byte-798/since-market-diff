@@ -1,5 +1,5 @@
 import type { TradingCalendar } from '../time/market.js'
-import { humanDuration } from '../time/market.js'
+import { humanDuration, istDate } from '../time/market.js'
 
 export interface DiffWindow {
   windowStart: Date
@@ -9,7 +9,16 @@ export interface DiffWindow {
   isFirstVisit: boolean
   awayMs: number
   awayLabel: string
+  /** True when `at` precedes the cursor — a deliberate look at a past moment. */
+  isReplay: boolean
 }
+
+/**
+ * A cursor slightly ahead of `at` is clock skew between devices. A cursor well
+ * ahead means the user has deliberately travelled back. The two need different
+ * handling and this is the line between them.
+ */
+export const CLOCK_SKEW_TOLERANCE_MS = 5 * 60_000
 
 /**
  * Turn a read cursor into the window we diff against.
@@ -43,10 +52,35 @@ export function resolveWindow(params: {
       isFirstVisit: true,
       awayMs: at.getTime() - windowStart.getTime(),
       awayLabel: 'your first look',
+      isReplay: false,
     }
   }
 
-  // A cursor from the future (clock skew across devices) must not invert the window.
+  const ahead = lastSeenAt.getTime() - at.getTime()
+
+  // Travelling back past the cursor. Clamping to `at` would produce a zero-width
+  // window and an empty brief, which looks like a broken feature rather than a
+  // deliberate one. Show the session leading up to that moment instead.
+  if (ahead > CLOCK_SKEW_TOLERANCE_MS) {
+    const sessions = calendar.allSessions
+    const day = istDate(at)
+    let idx = sessions.findIndex((d) => d >= day)
+    if (idx < 0) idx = sessions.length - 1
+    const startDate = sessions[Math.max(0, idx - firstVisitSessions)] ?? sessions[0]
+    const windowStart = startDate ? new Date(`${startDate}T04:44:00.000Z`) : at
+    const awayMs = Math.max(0, at.getTime() - windowStart.getTime())
+    return {
+      windowStart,
+      windowEnd: at,
+      sessions: Math.max(1, calendar.sessionsBetween(windowStart, at)),
+      isFirstVisit: false,
+      awayMs,
+      awayLabel: humanDuration(awayMs),
+      isReplay: true,
+    }
+  }
+
+  // Genuine clock skew: clamp so the window can never invert.
   const start = lastSeenAt.getTime() > at.getTime() ? at : lastSeenAt
   const awayMs = Math.max(0, at.getTime() - start.getTime())
 
@@ -57,5 +91,6 @@ export function resolveWindow(params: {
     isFirstVisit: false,
     awayMs,
     awayLabel: humanDuration(awayMs),
+    isReplay: false,
   }
 }

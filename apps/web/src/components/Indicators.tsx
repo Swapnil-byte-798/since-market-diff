@@ -1,21 +1,40 @@
-import type { Quality, Tier } from '@/lib/api'
+import type { Tier } from '@/lib/api'
 
-const QUALITY_COPY: Record<Quality, { label: string; tone: string; mark: string }> = {
-  FRESH: { label: 'Live', tone: 'text-ink-faint', mark: '●' },
-  DELAYED: { label: 'Delayed', tone: 'text-ink-muted', mark: '◐' },
-  STALE: { label: 'Stale', tone: 'text-signal', mark: '○' },
-  UNAVAILABLE: { label: 'Unavailable', tone: 'text-signal', mark: '✕' },
-  CONFLICTING: { label: 'Conflicting sources', tone: 'text-signal', mark: '⚠' },
-  SUSPECT: { label: 'Quarantined', tone: 'text-signal', mark: '⚠' },
+export type Provenance =
+  | 'NSE' | 'SIMULATED' | 'REPLAY' | 'DELAYED'
+  | 'STALE' | 'UNAVAILABLE' | 'CONFLICTING' | 'SUSPECT'
+
+/**
+ * What this number actually is — never merely how fresh it is.
+ *
+ * A generated price is the newest value we hold, but calling it "Live" would be
+ * a lie in the one place this product promises not to tell them. Provenance and
+ * freshness are different questions and are answered separately.
+ */
+const PROVENANCE_COPY: Record<Provenance, { label: string; tone: string; mark: string; title: string }> = {
+  NSE: { label: 'NSE', tone: 'text-ink-faint', mark: '●', title: 'Live NSE market data' },
+  SIMULATED: { label: 'Simulated', tone: 'text-ink-muted', mark: '◆', title: 'Deterministic generated data — not real market activity' },
+  REPLAY: { label: 'Replay', tone: 'text-ink-muted', mark: '◷', title: 'A past moment, re-evaluated through the same engine' },
+  DELAYED: { label: 'Delayed', tone: 'text-ink-muted', mark: '◐', title: 'Real and current, but behind' },
+  STALE: { label: 'Stale', tone: 'text-signal', mark: '○', title: 'Too old to reason about — alerts suppressed' },
+  UNAVAILABLE: { label: 'Unavailable', tone: 'text-signal', mark: '✕', title: 'No value on record' },
+  CONFLICTING: { label: 'Conflicting sources', tone: 'text-signal', mark: '⚠', title: 'Sources disagree beyond tolerance — alerts suppressed' },
+  SUSPECT: { label: 'Quarantined', tone: 'text-signal', mark: '⚠', title: 'Failed a sanity check — excluded from statistics' },
 }
 
 /** Never colour alone: every state carries a mark and a word. */
-export function QualityBadge({ quality, reason }: { quality: Quality; reason?: string }) {
-  const c = QUALITY_COPY[quality]
+export function ProvenanceBadge({
+  provenance, reason,
+}: {
+  provenance: Provenance | undefined
+  reason?: string
+}) {
+  const c = PROVENANCE_COPY[provenance ?? 'UNAVAILABLE']
   return (
-    <span className={`inline-flex items-center gap-1.5 text-[0.7rem] ${c.tone}`} title={reason}>
+    <span className={`inline-flex items-center gap-1.5 text-[0.7rem] ${c.tone}`} title={reason ?? c.title}>
       <span aria-hidden>{c.mark}</span>
       <span>{c.label}</span>
+      <span className="sr-only">{c.title}</span>
     </span>
   )
 }

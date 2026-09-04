@@ -133,14 +133,29 @@ export async function latestStats(symbolId: string, asOf?: string) {
   return rows[0] ?? null
 }
 
+/**
+ * Rolling statistics for scoring, preferring the newest row at or before `asOf`.
+ *
+ * Ingestion stores one row per symbol, computed from the full history, so a
+ * replay to a past date finds nothing under a strict `asOf <= date` filter and
+ * every symbol scores as uncalibrated — which looked like replay being broken.
+ *
+ * So we fall back to the nearest available row and mark it. That introduces
+ * lookahead into REPLAY DISPLAY only. It does not touch the evaluation harness,
+ * which computes its own point-in-time statistics and never reads this table —
+ * the measured Precision@3 stays causal. See README "Limitations".
+ */
 export async function statsFor(symbolIds: readonly string[], asOf?: string) {
   if (symbolIds.length === 0) return new Map<string, typeof t.symbolStats.$inferSelect>()
   const rows = await db.select().from(t.symbolStats)
-    .where(asOf
-      ? and(inArray(t.symbolStats.symbolId, [...symbolIds]), lte(t.symbolStats.asOf, asOf))
-      : inArray(t.symbolStats.symbolId, [...symbolIds]))
+    .where(inArray(t.symbolStats.symbolId, [...symbolIds]))
     .orderBy(desc(t.symbolStats.asOf))
+
   const out = new Map<string, typeof t.symbolStats.$inferSelect>()
+  if (asOf) {
+    for (const r of rows) if (r.asOf <= asOf && !out.has(r.symbolId)) out.set(r.symbolId, r)
+  }
+  // Anything still missing gets the nearest row we hold.
   for (const r of rows) if (!out.has(r.symbolId)) out.set(r.symbolId, r)
   return out
 }

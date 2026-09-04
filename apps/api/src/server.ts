@@ -8,6 +8,7 @@ import { and, asc, eq, ilike, inArray, or, sql as dsql } from 'drizzle-orm'
 import { db, schema, marketQueries as q } from '@since/db'
 import {
   BUDGET_LABEL, BUDGET_THRESHOLD, frequencyPhrase, displayPercentile, istDate, logReturn,
+  provenanceOf, type DataQuality,
   type AttentionBudget,
 } from '@since/core'
 import { investigate, type Stage } from '@since/agent'
@@ -149,10 +150,16 @@ app.get('/api/watchlist', async (req) => {
   const cursorBy = new Map(cursors.map((c) => [c.symbolId, c]))
   const thresholdBy = new Map(thresholds.map((t) => [t.symbolId, t]))
 
+  const wlMeta = await providerInfo()
   return {
     watchlistId: wl.id,
+    ...wlMeta,
     items: items.map((i) => ({
       ...i,
+      provenance: provenanceOf({
+        quality: ((obs.get(i.symbolId) ?? [])[0]?.quality ?? 'FRESH') as DataQuality,
+        simulated: wlMeta.simulated, replay: false,
+      }),
       price: prices.get(i.symbolId)?.price ?? null,
       observedAt: prices.get(i.symbolId)?.observedAt?.toISOString() ?? null,
       sources: (obs.get(i.symbolId) ?? []).map((o) => o.source),
@@ -230,6 +237,11 @@ app.get('/api/brief', { config: { rateLimit: LIMITS.brief } }, async (req) => {
   if (Number.isNaN(at.getTime())) throw badRequest('Invalid `at` timestamp')
 
   const brief = await evaluateBrief({ userId, at, budgetOverride: parsed.budget as AttentionBudget | undefined })
+
+  // Replay is not a mode — it is `at` in the past. But a value fetched for a
+  // past instant must never be labelled as current, so the distinction is
+  // carried through to every badge. The window itself is the authority.
+  const isReplay = brief.window.isReplay || (parsed.at !== undefined && Date.now() - at.getTime() > 5 * 60_000)
   const changeIds = await persistChanges(userId, brief)
 
   return {
@@ -243,7 +255,13 @@ app.get('/api/brief', { config: { rateLimit: LIMITS.brief } }, async (req) => {
       ...c,
       changeId: changeIds.get(c.symbolId) ?? null,
       scoreText: displayPercentile(c.score.pctl),
+      provenance: provenanceOf({ quality: c.score.quality, simulated: brief.simulated, replay: isReplay }),
     })),
+    suppressed: brief.suppressed.map((sup) => ({
+      ...sup,
+      provenance: provenanceOf({ quality: sup.quality, simulated: brief.simulated, replay: isReplay }),
+    })),
+    isReplay,
     budgetLabel: BUDGET_LABEL[brief.budget],
     budgetThreshold: BUDGET_THRESHOLD[brief.budget],
   }
@@ -316,6 +334,11 @@ app.get('/api/changes/:id', async (req) => {
     symbol: sym ? { id: sym.id, ticker: sym.ticker, name: sym.name, sectorId: sym.sectorId } : null,
     frequency: frequencyPhrase(change.pctl),
     scoreText: displayPercentile(change.pctl),
+    // A change is always a past window, so it is never labelled as current.
+    provenance: provenanceOf({
+      quality: change.quality, simulated: (await providerInfo()).simulated,
+      replay: Date.now() - change.windowEnd.getTime() > 5 * 60_000,
+    }),
     stats: stats ? { beta: stats.beta, residMad: stats.residMad, sampleN: stats.sampleN, asOf: stats.asOf } : null,
     investigation: inv
       ? {
@@ -331,6 +354,13 @@ app.get('/api/changes/:id', async (req) => {
 /* ---------------------------------------------------------- investigation */
 
 const running = new Map<string, Promise<unknown>>()
+/**
+ * Live investigation progress, so the UI can show what is happening as it
+ * happens rather than animating a timer. Single local process, so an in-memory
+ * map is the honest amount of machinery; a multi-instance deployment would move
+ * this to the Redis already described in DECISIONS #9.
+ */
+const progress = new Map<string, { stage: string | null; trail: unknown[] }>()
 
 app.post('/api/changes/:id/investigate', { config: { rateLimit: LIMITS.investigate } }, async (req) => {
   const userId = userIdOf(req as never)
@@ -355,6 +385,7 @@ app.post('/api/changes/:id/investigate', { config: { rateLimit: LIMITS.investiga
   }).onConflictDoNothing()
 
   const stages: Stage[] = []
+  progress.set(change.id, { stage: 'ANALYZING_MOVEMENT', trail: [] })
   const task = investigate({
     symbolId: change.symbolId,
     symbolName: sym?.name ?? change.symbolId,
@@ -370,7 +401,17 @@ app.post('/api/changes/:id/investigate', { config: { rateLimit: LIMITS.investiga
       returnPct: change.returnPct, expectedPct: change.expectedPct,
       residualPct: change.residualPct, residualZ: change.residualZ, degraded: null,
     },
-  }, { onStage: (s) => stages.push(s) })
+  }, {
+    onStage: (s) => {
+      stages.push(s)
+      const p = progress.get(change.id)
+      if (p) p.stage = s
+    },
+    onTrail: (step) => {
+      const p = progress.get(change.id)
+      if (p) p.trail.push(step)
+    },
+  })
     .then(async (result) => {
       await db.update(schema.investigations).set({
         status: result.status,
@@ -379,6 +420,7 @@ app.post('/api/changes/:id/investigate', { config: { rateLimit: LIMITS.investiga
         conclusion: result.conclusion.conclusion,
         confidence: result.conclusion.confidence,
         toolCalls: result.toolCalls.length,
+        toolTrail: result.trail,
         completedAt: new Date(),
         fallbackUsed: result.fallbackUsed,
       }).where(eq(schema.investigations.id, invId))
@@ -399,7 +441,10 @@ app.post('/api/changes/:id/investigate', { config: { rateLimit: LIMITS.investiga
         .set({ status: 'FAILED', completedAt: new Date(), fallbackUsed: true })
         .where(eq(schema.investigations.id, invId))
     })
-    .finally(() => running.delete(change.id))
+    .finally(() => {
+      running.delete(change.id)
+      setTimeout(() => progress.delete(change.id), 60_000)
+    })
 
   running.set(change.id, task)
   return { status: 'INVESTIGATING', investigationId: invId, reused: false }
@@ -410,10 +455,23 @@ app.get('/api/changes/:id/investigation', async (req) => {
   const { id } = z.object({ id: z.string().min(3).max(64) }).parse(req.params)
   const change = await getChange(userId, id)
   if (!change) throw notFound('Change not found')
+  const live = progress.get(change.id) ?? null
   const inv = await getInvestigation(change.id)
-  if (!inv) return { status: 'PENDING', investigation: null, evidence: [] }
+  if (!inv) {
+    return {
+      status: live ? 'INVESTIGATING' : 'PENDING',
+      stage: live?.stage ?? null,
+      trail: live?.trail ?? [],
+      investigation: null, evidence: [],
+    }
+  }
+  const done = ['COMPLETED', 'INSUFFICIENT_EVIDENCE', 'FAILED'].includes(inv.investigation.status)
   return {
     status: inv.investigation.status,
+    stage: done ? null : (live?.stage ?? null),
+    // Live trail while running; the persisted one once finished, so a reload
+    // shows the same investigation rather than an empty panel.
+    trail: done ? (inv.investigation.toolTrail ?? []) : (live?.trail ?? []),
     investigation: {
       ...inv.investigation,
       startedAt: inv.investigation.startedAt?.toISOString() ?? null,
@@ -497,6 +555,7 @@ app.get('/api/data-health', async (req) => {
     })
     rows.push({
       symbolId: id, quality: quality.quality, reason: quality.reason,
+      provenance: provenanceOf({ quality: quality.quality, simulated: meta.simulated, replay: false }),
       ageMs: quality.ageMs, sources: quality.sources,
       values: list.map((o) => ({ source: o.source, price: o.price, observedAt: o.observedAt.toISOString() })),
     })

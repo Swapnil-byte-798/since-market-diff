@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { api, type Brief, type Card } from '@/lib/api'
 import { BandBreakout, BandLegend } from '@/components/BandBreakout'
-import { AttentionScore, Delta, QualityBadge, TierLabel } from '@/components/Indicators'
+import { AttentionScore, Delta, ProvenanceBadge, TierLabel } from '@/components/Indicators'
 import { Skeleton, ErrorState, EmptyState, SimulatedBanner } from '@/components/States'
 import { timeIST, dateIST } from '@/components/format'
 import { TimeTravel } from '@/components/TimeTravel'
@@ -80,11 +80,23 @@ function Hero({ brief }: { brief: Brief }) {
 
   return (
     <section className="pt-10">
-      <p className="eyebrow">
-        {w.isFirstVisit
-          ? 'Your first look'
-          : <>Since {timeIST(w.windowStart)} · {dateIST(w.windowStart)} · away {w.awayLabel}</>}
-      </p>
+      {w.isFirstVisit ? (
+        <p className="eyebrow">Your first look</p>
+      ) : (
+        <div>
+          {/* The read cursor is the product. It gets its own line, not a footnote. */}
+          <p className="font-serif text-[0.95rem] leading-none text-ink-muted">
+            Since you last looked
+          </p>
+          <p className="mt-1.5 flex flex-wrap items-baseline gap-x-2.5 text-[0.8rem] text-ink">
+            <span className="tnum">{timeIST(w.windowStart)}</span>
+            <span className="text-ink-faint">·</span>
+            <span className="tnum text-ink-muted">{dateIST(w.windowStart)}</span>
+            <span className="text-ink-faint">·</span>
+            <span className="text-ink-muted">away <span className="tnum text-ink">{w.awayLabel}</span></span>
+          </p>
+        </div>
+      )}
       <h1 className="lede mt-4 max-w-[36rem] text-balance">{lede}</h1>
       <p className="mt-5 text-[0.8rem] text-ink-faint">
         <span className="tnum">{brief.totalWatched}</span> watched ·{' '}
@@ -165,7 +177,7 @@ function ChangeRow({ card, brief, index }: { card: Card; brief: Brief; index: nu
             <Delta value={s.returnPct} />
           </div>
           <div className="mt-1.5">
-            <QualityBadge quality={s.quality} reason={s.qualityReason} />
+            <ProvenanceBadge provenance={card.provenance} reason={s.qualityReason} />
           </div>
         </div>
       </div>
@@ -264,7 +276,7 @@ function Withheld({ brief }: { brief: Brief }) {
         {brief.suppressed.map((s) => (
           <li key={s.symbolId} className="flex flex-wrap items-baseline gap-x-3 text-[0.82rem]">
             <span className="text-ink">{brief.symbolNames[s.symbolId] ?? s.symbolId}</span>
-            <QualityBadge quality={s.quality} />
+            <ProvenanceBadge provenance={s.provenance} />
             <span className="text-ink-faint">{s.reason}</span>
           </li>
         ))}

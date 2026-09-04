@@ -353,6 +353,8 @@ export const investigations = pgTable('investigations', {
   primaryHypothesis: hypothesisId('primary_hypothesis'),
   /** Verdict per hypothesis: supported | rejected | insufficient, with reasons. */
   hypotheses: jsonb('hypotheses').$type<unknown[]>(),
+  /** Ordered record of what the investigation did and what each step found. */
+  toolTrail: jsonb('tool_trail').$type<unknown[]>(),
   conclusion: text('conclusion'),
   confidence: text('confidence'),          // 'HIGH' | 'MEDIUM' | 'LOW'
   toolCalls: integer('tool_calls').notNull().default(0),

@@ -60,10 +60,16 @@ export const SCENARIOS: Scenario[] = [
   { offset: 0, symbol: 'TECHM', kind: 'SECTOR_MOVE', shock: -0.020 },
   // A 1:2 split that must never surface as a -50% crash.
   { offset: 2, symbol: 'TATASTEEL', kind: 'SPLIT' },
-  // A quieter idiosyncratic move a few sessions back, for replay.
+  // Idiosyncratic moves a few sessions back, so replay has something real to
+  // show. These must be on symbols the demo watchlist actually contains,
+  // otherwise time travel lands on an empty brief and looks broken.
   {
-    offset: 4, symbol: 'ADANIENT', kind: 'IDIOSYNCRATIC_DROP', shock: -0.055, atMinute: 30,
-    headline: 'Adani Enterprises block deal weighs on the stock',
+    offset: 2, symbol: 'MARUTI', kind: 'IDIOSYNCRATIC_DROP', shock: -0.052, atMinute: 30,
+    headline: 'Maruti Suzuki flags weaker entry-level demand',
+  },
+  {
+    offset: 4, symbol: 'ITC', kind: 'EVENT_MOVE', shock: +0.041, atMinute: 55,
+    headline: 'ITC hotels demerger record date confirmed',
   },
 ]
 
