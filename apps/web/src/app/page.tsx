@@ -101,17 +101,23 @@ function Hero({ brief }: { brief: Brief }) {
  */
 function buildLede(brief: Brief): string {
   const n = brief.cards.length
+
   if (brief.regime) {
-    const moved = Math.round(brief.regime.breadth * brief.changedCount)
     const dir = brief.regime.indexReturnPct < 0 ? 'fell' : 'rose'
     const pct = Math.abs(brief.regime.indexReturnPct).toFixed(1)
+    const withMarket = brief.regime.withMarket
+    const total = brief.regime.movedTotal
+
     if (n === 0) {
       return `The market ${dir} ${pct}%, and your watchlist ${dir} with it. Nothing moved for reasons of its own.`
     }
-    return `The market ${dir} ${pct}%. ${moved} of your ${brief.changedCount} stocks ${dir} with it. ${
-      n === 1 ? 'One didn’t.' : `${cap(word(n))} didn’t.`
-    }`
+    // NOT "n didn't fall" — n is how many deserve attention, which is a different
+    // quantity from (total - withMarket), and a stock can fall WITH the market and
+    // still be here because it fell further than the market explains.
+    return `The market ${dir} ${pct}%, and ${withMarket} of your ${total} stocks ${dir} with it. ` +
+      `${cap(word(n))} moved for ${n === 1 ? 'reasons of its own' : 'reasons of their own'}.`
   }
+
   if (n === 0) {
     return brief.changedCount === 0
       ? 'Nothing moved while you were away.'

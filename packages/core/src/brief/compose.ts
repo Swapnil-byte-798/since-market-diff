@@ -8,6 +8,10 @@ export interface MarketRegime {
   indexReturnPct: number
   /** Share of the watchlist moving the same way as the index, 0..1. */
   breadth: number
+  /** Exact count moving with the index. Never re-derive this from breadth. */
+  withMarket: number
+  /** Exact count of symbols that moved at all. */
+  movedTotal: number
   headline: string
 }
 
@@ -138,6 +142,8 @@ function detectRegime(
     active: true,
     indexReturnPct,
     breadth,
+    withMarket: sameWay,
+    movedTotal: moved.length,
     headline:
       `The market ${dir} ${Math.abs(indexReturnPct).toFixed(1)}%, and ${sameWay} of your ` +
       `${moved.length} stocks ${dir} with it. This is about the market, not your stocks.`,

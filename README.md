@@ -319,6 +319,8 @@ npm run eval              # regenerate the evaluation numbers
 npm run dev               # API on :4000, app on http://localhost:3000
 npm run demo:reset        # rewind cursors so the walkthrough is repeatable
 npm run feed:check        # is the real NSE feed reachable yet?
+npm run status            # is everything running?
+npm run share             # temporary public URL, for a live demo
 ```
 
 Or the whole setup in one line: `npm run setup && npm run dev`

@@ -71,6 +71,29 @@ describe('the Brief', () => {
     expect(b.regime!.breadth).toBeGreaterThan(0.8)
   })
 
+  it('reports exact counts, so the headline arithmetic cannot lie', () => {
+    // Regression: the hero once read "28 of your 30 stocks fell with it. Three
+    // didn't" — where "three" was the number of CARDS SHOWN, not 30 - 28. Two
+    // different quantities spliced into one sentence. The counts must be exact
+    // and internally consistent, and callers must never re-derive them from the
+    // breadth ratio.
+    const scored = [
+      ...Array.from({ length: 28 }, (_, i) => res(`D${i}.NS`, 40, -2.1)),
+      res('U1.NS', 97, +1.2),
+      res('U2.NS', 96, +0.8),
+    ]
+    const b = composeBrief({
+      scored, window: win, budget: 'MEDIUM', cap: 3,
+      indexReturn: -0.021, indexSigma: 0.005, sectorOf: noSector,
+    })
+    expect(b.regime).not.toBeNull()
+    expect(b.regime!.withMarket).toBe(28)
+    expect(b.regime!.movedTotal).toBe(30)
+    // The count that bucked the market is arithmetic, not the card count.
+    expect(b.regime!.movedTotal - b.regime!.withMarket).toBe(2)
+    expect(b.regime!.breadth).toBeCloseTo(28 / 30, 10)
+  })
+
   it('does not call an ordinary day a regime', () => {
     const scored = Array.from({ length: 20 }, (_, i) => res(`N${i}.NS`, 40, i < 10 ? 0.3 : -0.3))
     const b = composeBrief({

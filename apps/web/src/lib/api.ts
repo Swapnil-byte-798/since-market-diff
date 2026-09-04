@@ -82,7 +82,8 @@ export interface Brief {
   at: string
   totalWatched: number; changedCount: number; attentionCount: number
   filteredCount: number; suppressedCount: number
-  regime: { active: boolean; indexReturnPct: number; breadth: number; headline: string } | null
+  regime: { active: boolean; indexReturnPct: number; breadth: number
+    withMarket: number; movedTotal: number; headline: string } | null
   cards: Card[]
   suppressed: { symbolId: string; quality: Quality; reason: string }[]
   budget: string; budgetLabel: string; budgetThreshold: number; cap: number
