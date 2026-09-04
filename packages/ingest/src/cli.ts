@@ -15,6 +15,7 @@ import { detectSuspectBar, logReturn, type DailyBar } from '@since/core'
 import { UNIVERSE, SECTORS, BENCHMARK, BENCHMARK_ID, symbolId } from './universe.js'
 import { YahooProvider } from './providers/yahoo.js'
 import { SyntheticProvider } from './providers/synthetic.js'
+import { TwelveDataProvider } from './providers/twelvedata.js'
 import { computeSymbolStats, buildFallbackGrid } from './stats.js'
 import type { MarketDataProvider } from './provider.js'
 
@@ -30,6 +31,8 @@ const YEARS = Number(opt('years', '3'))
 const INTRADAY_DAYS = Number(opt('intraday-days', '55'))
 const WITH_FAULTS = !flag('no-faults')
 const CLEAN = flag('clean')
+// Twelve Data's free tier allows 8 req/min, so real runs are serialised by the
+// provider's own throttle regardless of this.
 const CONCURRENCY = Number(opt('concurrency', '3'))
 
 const DEMO_EMAIL = 'demo@since.local'
@@ -47,6 +50,31 @@ const DEMO_WATCHLIST_SIZE = 30
 const STALE_FEED_SYMBOL = 'RELIANCE.NS'
 const CONFLICT_SYMBOL = 'ONGC.NS'
 
+/**
+ * Pick a provider.
+ *
+ * `auto` (the default) prefers Twelve Data when a key is present, since Yahoo's
+ * unofficial endpoint rate-limits entire carrier ranges. Either real provider
+ * falls back to the deterministic synthetic one if the benchmark cannot be
+ * fetched — loudly, and recorded on every observation.
+ */
+function buildProvider(name: string, toDate: string): MarketDataProvider {
+  const key = process.env.TWELVEDATA_API_KEY
+  if (name === 'synthetic') return new SyntheticProvider(toDate)
+  if (name === 'twelvedata') return new TwelveDataProvider(requireKey(key))
+  if (name === 'yahoo') return new YahooProvider()
+  return key ? new TwelveDataProvider(key) : new YahooProvider()
+}
+
+function requireKey(key: string | undefined): string {
+  if (!key) {
+    console.error('[ingest] TWELVEDATA_API_KEY is not set.')
+    console.error('[ingest] Get a free key at https://twelvedata.com/pricing (free tier: 800 req/day)')
+    process.exit(1)
+  }
+  return key
+}
+
 async function main(): Promise<void> {
   const t0 = Date.now()
   const today = new Date()
@@ -54,8 +82,7 @@ async function main(): Promise<void> {
   const fromDate = new Date(today.getTime() - YEARS * 365 * 86400_000).toISOString().slice(0, 10)
   const intradayFrom = new Date(today.getTime() - INTRADAY_DAYS * 86400_000).toISOString().slice(0, 10)
 
-  let provider: MarketDataProvider =
-    PROVIDER === 'synthetic' ? new SyntheticProvider(toDate) : new YahooProvider()
+  let provider: MarketDataProvider = buildProvider(PROVIDER, toDate)
 
   log(`provider=${provider.source} simulated=${provider.isSimulated} range=${fromDate}..${toDate}`)
 

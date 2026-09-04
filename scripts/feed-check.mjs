@@ -12,6 +12,7 @@ const UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 '
 const PROBES = ['%5ENSEI', 'RELIANCE.NS']
 
 let ok = 0
+// eslint-disable-next-line prefer-const
 for (const sym of PROBES) {
   const url = `https://query1.finance.yahoo.com/v8/finance/chart/${sym}?range=5d&interval=1d`
   try {
@@ -22,6 +23,23 @@ for (const sym of PROBES) {
   } catch (err) {
     console.log(`  ${decodeURIComponent(sym).padEnd(14)} failed — ${err.message}`)
   }
+}
+
+// Twelve Data is the fallback when Yahoo blocks a whole carrier range.
+const td = process.env.TWELVEDATA_API_KEY
+if (td) {
+  try {
+    const url = `https://api.twelvedata.com/time_series?symbol=RELIANCE&exchange=NSE&interval=1day&outputsize=2&apikey=${td}`
+    const res = await fetch(url, { signal: AbortSignal.timeout(15_000) })
+    const json = await res.json()
+    const good = json.status !== 'error' && Array.isArray(json.values) && json.values.length > 0
+    console.log(`  ${'twelvedata'.padEnd(14)} ${good ? 'reachable' : `error: ${json.message ?? 'no data'}`}`)
+    if (good) ok = PROBES.length
+  } catch (err) {
+    console.log(`  ${'twelvedata'.padEnd(14)} failed - ${err.message}`)
+  }
+} else {
+  console.log(`  ${'twelvedata'.padEnd(14)} no TWELVEDATA_API_KEY set`)
 }
 
 console.log()

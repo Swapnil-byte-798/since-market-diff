@@ -371,6 +371,7 @@ Or the whole setup in one line: `npm run setup && npm run dev`
 | Variable | Default | Purpose |
 |---|---|---|
 | `DATABASE_URL` | `postgresql://since:since@localhost:5544/since` | Local Postgres. **Non-loopback hosts are rejected at the client.** |
+| `TWELVEDATA_API_KEY` | — | Real NSE data. [Free key](https://twelvedata.com/pricing), 800 req/day; an ingest needs ~102. |
 | `ANTHROPIC_API_KEY` | — | Enables the agent. Everything works without it. |
 | `AGENT_MODEL` | `claude-opus-5` | Investigation model |
 | `PORT` | `4000` | API port |
@@ -419,8 +420,12 @@ Every one of those would have made the feature list longer and the product worse
 
 **Honest ones, not the flattering kind.**
 
-1. **The shipped dataset is simulated.** Yahoo rate-limited this machine during
-   ingestion and did not release it. The evaluation numbers measure the algorithm
+1. **The shipped dataset is simulated.** Yahoo rate-limits by IP and blocked the
+   build machine's entire mobile carrier range — confirmed by their homepage
+   returning 429 while every other host resolved normally, across two different
+   carrier IPs. NSE's own site blocks non-browser traffic at the edge (403), and
+   the remaining free sources sit behind bot challenges. A `TwelveDataProvider`
+   is implemented behind the same seam and needs only a free key. The evaluation numbers measure the algorithm
    against data with known structure — they are not a claim about real markets.
    The provider seam makes this a one-flag switch, and the real adapter is written,
    typed and used (it ingested 11,760 real NSE bars before the block).
