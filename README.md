@@ -321,6 +321,7 @@ npm run demo:reset        # rewind cursors so the walkthrough is repeatable
 npm run feed:check        # is the real NSE feed reachable yet?
 npm run status            # is everything running?
 npm run share             # temporary public URL, for a live demo
+npm run share -- --detach # ...and leave it running in the background
 ```
 
 Or the whole setup in one line: `npm run setup && npm run dev`
