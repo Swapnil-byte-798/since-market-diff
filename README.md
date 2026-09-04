@@ -318,6 +318,7 @@ npm run ingest            # one-shot historical load (add --provider synthetic t
 npm run eval              # regenerate the evaluation numbers
 npm run dev               # API on :4000, app on http://localhost:3000
 npm run demo:reset        # rewind cursors so the walkthrough is repeatable
+npm run feed:check        # is the real NSE feed reachable yet?
 ```
 
 Or the whole setup in one line: `npm run setup && npm run dev`
@@ -404,6 +405,7 @@ a broker has.
 
 ## Documents
 
+- [`PITCH.md`](PITCH.md) — the 100-word pitch, and where a reviewer should look first
 - [`DECISIONS.md`](DECISIONS.md) — 15 engineering decisions, why, and what each cost
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — diagrams and data flow
 - [`docs/DEMO.md`](docs/DEMO.md) — walkthrough
