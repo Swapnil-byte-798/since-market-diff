@@ -11,9 +11,27 @@ import {
 import { lintConclusion, checkNumericGrounding } from './guards.js'
 import { deterministicConclusion, AGENT_UNAVAILABLE_NOTE } from './fallback.js'
 
-/** Hard caps. An investigation that cannot finish inside these is a failed one. */
+/**
+ * Hard caps. An investigation that cannot finish inside these is a failed one.
+ *
+ * The budget counts EVIDENCE GATHERING only. `record_finding` and
+ * `submit_conclusion` are how the agent finishes, and counting them against the
+ * same allowance is self-defeating: a first live run spent seven calls
+ * investigating and three recording findings, hit the ceiling, and never reached
+ * its conclusion — so a complete investigation was reported as a failure.
+ */
 export const MAX_TOOL_CALLS = 10
-export const DEADLINE_MS = 45_000
+/** Absolute ceiling across all calls, so a loop still cannot run away. */
+export const MAX_TOTAL_CALLS = 20
+/**
+ * Generous, because a free-tier provider paces requests rather than refusing
+ * them: an investigation that waits out a rate limit is worth more than one
+ * that gives up and falls back.
+ */
+export const DEADLINE_MS = 90_000
+
+/** Bookkeeping rather than evidence: exempt from the investigation budget. */
+const TERMINAL_TOOLS = new Set(['record_finding', 'submit_conclusion'])
 
 export interface InvestigationInput {
   symbolId: string
@@ -64,6 +82,7 @@ ${HYPOTHESES.map((h) => `  ${h} — ${HYPOTHESIS_LABEL[h]}`).join('\n')}
 
 How to investigate:
 - Start with get_move_decomposition. It tells you how much of the move the market already explains.
+- Call independent tools TOGETHER in one step rather than one at a time. Volume, corporate actions, data health and the intraday shape do not depend on each other, so request them at once. Only the event search should wait, because where you look depends on what the intraday shape says.
 - Let each result choose your next call. If get_intraday_shape reports a CONCENTRATED move, search for events in a narrow range around that minute. If it reports CONTINUOUS_DRIFT, a discrete event is unlikely and peer behaviour matters more. Do not run a fixed checklist.
 - Call record_finding once for each hypothesis you can actually decide. You do not have to evaluate all five.
 - Finish with submit_conclusion.
@@ -71,7 +90,7 @@ How to investigate:
 Rules that are not negotiable:
 - Every number you state must have appeared in a tool result. Do not compute new figures and do not round to something you did not see.
 - Describe what happened. Never predict what will happen. Never advise buying, selling or holding. Never call anything cheap, expensive, undervalued or overvalued.
-- Correlation is not causation. An event published in the same window is "consistent with" the move; it caused it only if the timing genuinely supports that, and you should check the timing before saying so.
+- Correlation is not causation, and this is not a style note. Even when an event precedes a move, you observed an ordering, not a mechanism. Write "fell 7.8% after X was published" or "the timing is consistent with X". Do NOT write that something "triggered", "caused", "drove", "led to" or "was due to" a move. Timing that lines up is evidence for a link; it is not proof of one, and stating it as proof is the single easiest way for this product to be wrong in public.
 - If nothing explains the move, say so and set insufficient_evidence. That is a useful, correct answer — not a failure.
 - Be brief. Two sentences at most.`
 
@@ -157,7 +176,10 @@ export async function investigate(
   onStage('ANALYZING_MOVEMENT')
 
   try {
-    while (toolCalls.length < MAX_TOOL_CALLS && Date.now() < deadline) {
+    let evidenceCalls = 0
+    while (evidenceCalls < MAX_TOOL_CALLS
+           && toolCalls.length < MAX_TOTAL_CALLS
+           && Date.now() < deadline) {
       const response = await provider.turn({ system: SYSTEM, history, tools })
 
       if (response.stop === 'refusal') {
@@ -179,6 +201,7 @@ export async function investigate(
         }
         onStage(def.stage)
         toolCalls.push({ name: use.name, input: use.input, at: new Date().toISOString() })
+        if (!TERMINAL_TOOLS.has(use.name)) evidenceCalls++
 
         try {
           const out = await def.run(use.input, ctx)

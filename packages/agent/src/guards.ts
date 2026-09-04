@@ -15,6 +15,11 @@
  * problem, so the linter is a hard gate rather than a warning.
  */
 const FORBIDDEN = [
+  // Causal assertions. An event that precedes a move is an ordering we observed,
+  // not a mechanism we established — and a product that states the difference
+  // wrongly is wrong in exactly the way markets punish.
+  'caused by', 'because of', 'due to the', 'triggered the', 'triggered a',
+  'drove the', 'led to the', 'resulted in the',
   'buy', 'sell', 'hold', 'target price', 'price target', 'should invest',
   'will rise', 'will fall', 'will go', 'expect it to', 'we expect', 'poised to',
   'set to rise', 'set to fall', 'recommend', 'undervalued', 'overvalued',

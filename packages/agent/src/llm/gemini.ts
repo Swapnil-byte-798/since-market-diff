@@ -21,18 +21,75 @@ import {
  *   3. Tool results are `functionResponse` parts on a *user* turn, not a
  *      dedicated role.
  */
+/**
+ * Free-tier daily quota is per model — measured at 20 requests/day/model on the
+ * 3.x flash family. One investigation costs several requests, so a single model
+ * runs dry after a handful of runs. Rotating across models multiplies the
+ * allowance and, more importantly, means a demo does not die because someone
+ * exercised the feature earlier the same day.
+ */
+export const DEFAULT_MODELS = ['gemini-3.5-flash', 'gemini-3.7-flash', 'gemini-3.1-flash-lite']
+
 export class GeminiProvider implements LlmProvider {
   readonly name = 'gemini'
   private readonly ai: GoogleGenAI
+  private readonly models: string[]
+  /** Advances only when a model's DAILY quota is gone; per-minute limits wait. */
+  private cursor = 0
 
-  constructor(apiKey: string, readonly model = process.env.AGENT_MODEL ?? 'gemini-2.5-flash') {
+  constructor(apiKey: string, models?: string | string[]) {
     this.ai = new GoogleGenAI({ apiKey })
+    const configured = models ?? process.env.AGENT_MODEL
+    const list = Array.isArray(configured)
+      ? configured
+      : (configured ?? '').split(',').map((m) => m.trim()).filter(Boolean)
+    this.models = list.length ? list : DEFAULT_MODELS
   }
 
-  async turn({ system, history, tools }: {
+  /** The model currently in use. Reported in logs and by agent:check. */
+  get model(): string { return this.models[this.cursor] ?? this.models[0]! }
+
+  async turn(params: {
     system: string; history: LlmMessage[]; tools: LlmToolDef[]
   }): Promise<LlmTurn> {
-    try {
+    // The free tier returns 503 under load and 429 at the rate cap, both often
+    // transient. Retrying a few times is the difference between a demo that
+    // works and one that dies on someone else's traffic spike.
+    let lastErr: unknown
+    const maxAttempts = this.models.length + 2
+
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      try {
+        return await this.attempt(params)
+      } catch (err) {
+        lastErr = err
+        const msg = (err as Error).message ?? ''
+        const daily = /PerDay|RequestsPerDay/i.test(msg)
+        const rateLimited = /\b429\b|RESOURCE_EXHAUSTED|quota/i.test(msg)
+        const overloaded = /\b503\b|UNAVAILABLE|high demand/i.test(msg)
+
+        // A day's quota does not come back by waiting, so move to the next
+        // model instead of sleeping through a limit that will not lift.
+        if (daily && this.cursor < this.models.length - 1) {
+          this.cursor++
+          continue
+        }
+        if ((!rateLimited && !overloaded) || attempt === maxAttempts - 1) break
+
+        // A per-minute window needs a real pause; overload clears faster.
+        const wait = rateLimited ? 12_000 : 2_500 * (attempt + 1)
+        await new Promise((r) => setTimeout(r, wait))
+      }
+    }
+    const message = (lastErr as Error)?.message ?? 'Gemini request failed'
+    const status = /\b(4\d\d|5\d\d)\b/.exec(message)?.[1]
+    throw new LlmUnavailable(message, status ? Number(status) : undefined)
+  }
+
+  private async attempt({ system, history, tools }: {
+    system: string; history: LlmMessage[]; tools: LlmToolDef[]
+  }): Promise<LlmTurn> {
+    {
       const res = await this.ai.models.generateContent({
         model: this.model,
         contents: toGemini(history),
@@ -43,26 +100,31 @@ export class GeminiProvider implements LlmProvider {
         },
       })
 
-      const calls = res.functionCalls ?? []
-      const toolCalls: LlmToolCall[] = calls.map((c, i) => ({
-        // Positional id: Gemini does not supply one, and the loop needs to pair
-        // each result with its call.
-        id: `gemini_${i}_${c.name ?? 'unknown'}`,
-        name: c.name ?? 'unknown',
-        input: (c.args ?? {}) as Record<string, unknown>,
-      }))
+      // Read the parts directly rather than res.functionCalls: the convenience
+      // accessor drops the thought signature, and Gemini 3 rejects the next
+      // request if that signature is not echoed back with the call.
+      const parts = (res.candidates?.[0]?.content?.parts ?? []) as GeminiPart[]
 
-      const text = typeof res.text === 'string' ? res.text : ''
+      const toolCalls: LlmToolCall[] = []
+      let text = ''
+      parts.forEach((part, i) => {
+        if (part.text) text += part.text
+        if (!part.functionCall) return
+        toolCalls.push({
+          // Positional id: Gemini does not supply one, and the loop needs to
+          // pair each result with its call.
+          id: `gemini_${i}_${part.functionCall.name ?? 'unknown'}`,
+          name: part.functionCall.name ?? 'unknown',
+          input: (part.functionCall.args ?? {}) as Record<string, unknown>,
+          ...(part.thoughtSignature ? { providerMeta: { thoughtSignature: part.thoughtSignature } } : {}),
+        })
+      })
       // A safety block returns no candidates and no calls; treat it as a refusal
       // rather than as a finished turn with nothing to say.
       const blocked = toolCalls.length === 0 && text.trim() === '' && (res.candidates?.length ?? 0) === 0
       if (blocked) return { text: '', toolCalls: [], stop: 'refusal' }
 
       return { text, toolCalls, stop: toolCalls.length > 0 ? 'tool_use' : 'end' }
-    } catch (err) {
-      const message = (err as Error).message ?? 'Gemini request failed'
-      const status = /\b(4\d\d|5\d\d)\b/.exec(message)?.[1]
-      throw new LlmUnavailable(message, status ? Number(status) : undefined)
     }
   }
 }
@@ -113,8 +175,10 @@ function toSchema(node: unknown): Schema {
 
 interface GeminiPart {
   text?: string
-  functionCall?: { name: string; args: Record<string, unknown> }
+  functionCall?: { name?: string; args?: Record<string, unknown> }
   functionResponse?: { name: string; response: Record<string, unknown> }
+  /** Gemini 3: must be replayed verbatim alongside the call it belongs to. */
+  thoughtSignature?: string
 }
 
 function toGemini(history: readonly LlmMessage[]): { role: string; parts: GeminiPart[] }[] {
@@ -125,7 +189,13 @@ function toGemini(history: readonly LlmMessage[]): { role: string; parts: Gemini
     } else if (m.role === 'assistant') {
       const parts: GeminiPart[] = []
       if (m.text) parts.push({ text: m.text })
-      for (const c of m.toolCalls) parts.push({ functionCall: { name: c.name, args: c.input } })
+      for (const c of m.toolCalls) {
+        const sig = c.providerMeta?.['thoughtSignature']
+        parts.push({
+          functionCall: { name: c.name, args: c.input },
+          ...(typeof sig === 'string' ? { thoughtSignature: sig } : {}),
+        })
+      }
       // A turn with nothing in it is rejected outright.
       out.push({ role: 'model', parts: parts.length ? parts : [{ text: '' }] })
     } else {

@@ -265,6 +265,18 @@ Eight typed tools return timestamped facts and no opinions:
 Different inputs produce different tool sequences. That is what makes it agentic
 rather than a fixed pipeline with a model stapled to the end.
 
+Verified live: an investigation makes ~12 calls, resolves all four testable
+hypotheses, and concludes with figures traceable to tool output:
+
+> HDFC Bank fell 7.84% on 2.62 times normal volume, with a concentrated 7% drop
+> occurring at 06:05:00 UTC. **This timing is consistent with** the publication
+> of a news report at 06:00:00 UTC stating that the bank reported higher
+> slippages in its unsecured retail book.
+
+Note the phrasing. An earlier run wrote that the news *"triggered"* the drop —
+the timing supported a link, but an ordering we observed is not a mechanism we
+established. The prompt and the linter now both refuse it.
+
 ### Guards — a prompt is a hope, a check is a guarantee
 
 - **Numeric grounding.** Every number in the conclusion must appear in an evidence
@@ -350,7 +362,7 @@ Audited against the specification this was built to. Nothing below is aspiration
 | Rate limiting by cost category | done |
 | All 18 specified API endpoints (20 total) | done |
 | 69 tests, 7 packages typechecked, production build clean | done |
-| Agent: hypothesis elimination, 9 typed tools, guards, deterministic fallback | **code complete; never run against a live model** |
+| Agent: hypothesis elimination, 9 typed tools, guards, deterministic fallback | done — **verified against a live model** |
 | Provider-neutral LLM layer (Gemini + Anthropic) | done |
 | Evaluation on real market data | done — 753 sessions, Twelve Data |
 | Real NSE prices in the demo | **blocked — every free NSE feed gated or IP-banned** |
@@ -452,10 +464,12 @@ Every one of those would have made the feature list longer and the product worse
    against data with known structure — they are not a claim about real markets.
    The provider seam makes this a one-flag switch, and the real adapter is written,
    typed and used (it ingested 11,760 real NSE bars before the block).
-2. **The live agent path was never executed.** No `ANTHROPIC_API_KEY` was available
-   on the build machine. The loop, tools, schemas, guards and fallback are all
-   implemented and unit-tested; the fallback path is proven end to end. The
-   model-in-the-loop path is not.
+2. **The agent depends on a free-tier quota.** Verified end to end against
+   Gemini — 12 tool calls, four hypotheses resolved, a grounded conclusion — but
+   the free tier allows roughly 20 requests per day *per model*, and one
+   investigation costs several. Models rotate on exhaustion to multiply that,
+   and the deterministic path takes over when it runs out. A paid key removes
+   the ceiling.
 3. **The evaluation label is a proxy.** "Followed through by ≥1.5σ" is a defensible
    stand-in for "deserved your attention", not the thing itself. Three definitions
    are reported for exactly this reason.

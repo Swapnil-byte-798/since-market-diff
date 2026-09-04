@@ -14,9 +14,17 @@ export { AnthropicProvider, GeminiProvider }
  * that puts the loop on its deterministic path.
  */
 export function resolveProvider(env: NodeJS.ProcessEnv = process.env): LlmProvider | null {
-  const forced = env.AGENT_PROVIDER?.toLowerCase()
-  const gemini = env.GEMINI_API_KEY ?? env.GOOGLE_API_KEY
-  const anthropic = env.ANTHROPIC_API_KEY
+  // A declared-but-empty variable is the normal state of a fresh .env, and it
+  // must count as absent — otherwise an empty key reaches the SDK and comes back
+  // as an authentication failure that looks like a broken integration.
+  const key = (v: string | undefined): string | undefined => {
+    const t = v?.trim()
+    return t ? t : undefined
+  }
+
+  const forced = key(env.AGENT_PROVIDER)?.toLowerCase()
+  const gemini = key(env.GEMINI_API_KEY) ?? key(env.GOOGLE_API_KEY)
+  const anthropic = key(env.ANTHROPIC_API_KEY)
 
   if (forced === 'gemini') return gemini ? new GeminiProvider(gemini) : null
   if (forced === 'anthropic') return anthropic ? new AnthropicProvider(anthropic) : null

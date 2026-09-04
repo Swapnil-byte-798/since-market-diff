@@ -266,3 +266,37 @@ entirely; and tool results are `functionResponse` parts on a user turn rather
 than a role of their own. Neither adapter has been exercised against a live model
 — no key was available on the build machine — so the first real run is the real
 test.
+
+---
+
+### 18. What the first live agent runs changed.
+
+**Decision.** Four changes, none of which I would have predicted from reading the
+code:
+
+1. **The tool budget counts evidence gathering only.** The first live run spent
+   seven calls investigating and three recording findings, hit a flat cap of ten,
+   and never reached `submit_conclusion` — so a complete investigation was
+   reported as a failure. `record_finding` and `submit_conclusion` are how the
+   agent finishes; capping them is self-defeating.
+2. **Independent tools are requested together.** The free tier limits requests,
+   not tool calls, so nine sequential turns exhausted the quota. Asking for
+   parallel calls where the tools do not depend on each other cut the turns by
+   more than half.
+3. **Models rotate on daily exhaustion.** Free-tier quota is per model and
+   measured at 20 requests/day on the 3.x flash family — a handful of
+   investigations. A per-minute limit is worth waiting out; a per-day limit is
+   not, so exhaustion advances to the next model instead of sleeping.
+4. **Causal language is blocked outright.** The model wrote that news
+   "triggered" a drop. The timing genuinely supported a link, but an ordering we
+   observed is not a mechanism we established, and that distinction is the
+   easiest place for this product to be confidently wrong. The prompt now
+   demands "consistent with" and the linter rejects the alternatives.
+
+**Why.** These are exactly the failures that do not appear until a real model is
+on the other end. Every one of them would have surfaced during a demo instead.
+
+**Tradeoff.** Gemini's free tier makes the agent reachable without a paid
+account, and costs a daily ceiling that rotation mitigates rather than removes.
+`gemini-2.5-*` is closed to new API keys entirely — chosen models were picked by
+testing, not reputation.

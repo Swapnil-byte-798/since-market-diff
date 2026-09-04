@@ -15,6 +15,14 @@ export interface LlmToolCall {
   id: string
   name: string
   input: Record<string, unknown>
+  /**
+   * Opaque, provider-owned data that must survive a round trip.
+   *
+   * Gemini 3 attaches a thought signature to every function call and rejects the
+   * next request if it is not echoed back. The loop must carry this without
+   * understanding it, so it stays untyped and no other provider looks at it.
+   */
+  providerMeta?: Record<string, unknown>
 }
 
 export interface LlmToolResult {

@@ -105,6 +105,9 @@ if (firstChange) {
     : 'not investigated yet'
 }
 note('B', 'An investigation ran against a live model', agentRan, agentDetail)
+note('B', 'Agent conclusion avoids causal claims', !agentRan || !/triggered|caused by|because of/i.test(
+  String((await get(`/api/changes/${firstChange}/investigation`, jar)).body?.investigation?.conclusion ?? '')),
+  'an ordering observed is not a mechanism established')
 
 /* ---------------------------------------------- C. demo reliability ------ */
 const regime = demoBrief?.regime ?? brief?.regime

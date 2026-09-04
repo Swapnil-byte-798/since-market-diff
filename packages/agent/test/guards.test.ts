@@ -24,6 +24,26 @@ describe('compliance linter', () => {
     }
   })
 
+  it('rejects causal assertions, not just advice', () => {
+    // The timing of an event relative to a move is an ordering we observed, not
+    // a mechanism we established. Saying otherwise is the easiest way for this
+    // product to be confidently wrong.
+    for (const bad of [
+      'The results announcement triggered a 7% drop.',
+      'The stock fell because of the guidance cut.',
+      'Weak demand caused by the festive slowdown drove the decline.',
+    ]) {
+      expect(lintConclusion(bad).ok).toBe(false)
+    }
+  })
+
+  it('accepts the honest phrasing of the same observation', () => {
+    const good =
+      'HDFC Bank fell 7.8% after results were published at 06:00. The move was concentrated ' +
+      'in one five-minute bar and was not shared by sector peers.'
+    expect(lintConclusion(good).ok).toBe(true)
+  })
+
   it('accepts purely descriptive, past-tense statements', () => {
     const good =
       'HDFC Bank fell 7.8% against a market-implied 3.4%, leaving 4.6% unexplained by the index. ' +
@@ -95,6 +115,15 @@ describe('provider selection', () => {
 
   it('returns null with no keys, which is a normal outcome', () => {
     expect(resolveProvider({} as NodeJS.ProcessEnv)).toBeNull()
+  })
+
+  it('treats a declared-but-empty key as absent', () => {
+    // A fresh .env declares every variable with no value. Passing '' to an SDK
+    // surfaces as an auth failure that looks like a broken integration.
+    expect(resolveProvider({ GEMINI_API_KEY: '' } as NodeJS.ProcessEnv)).toBeNull()
+    expect(resolveProvider({ GEMINI_API_KEY: '   ' } as NodeJS.ProcessEnv)).toBeNull()
+    const env = { AGENT_PROVIDER: 'gemini', GEMINI_API_KEY: '' }
+    expect(resolveProvider(env as NodeJS.ProcessEnv)).toBeNull()
   })
 
   it('returns null when a forced provider has no key, rather than silently using the other', () => {

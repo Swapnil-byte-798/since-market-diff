@@ -30,8 +30,9 @@
     "status": "node scripts/status.mjs",
     "share": "node scripts/share.mjs",
     "validate": "node scripts/validate.mjs",
-    "env:init": "node -e \"const fs=require('fs');if(fs.existsSync('.env')){console.log('  .env already exists \u2014 leaving it alone')}else{fs.copyFileSync('.env.example','.env');console.log('  created .env from .env.example \u2014 add your keys, it is gitignored')}\"",
-    "eval:us": "npm run -w @since/eval start -- us"
+    "env:init": "node scripts/env-init.mjs",
+    "eval:us": "npm run -w @since/eval start -- us",
+    "agent:check": "tsx scripts/agent-check.ts"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",
