@@ -18,6 +18,13 @@ anyone with Docker and Node — `docker compose up -d db && npm run ingest`.
 **Tradeoff.** No public URL for reviewers who won't clone. Mitigated with a
 recorded walkthrough and a seeded, deterministic demo dataset.
 
+**Amended.** Deployment turned out to matter more than the tradeoff allowed for:
+a reviewer with a queue of submissions will not clone a repository. The guard is
+now an explicit opt-in (`ALLOW_REMOTE_DB=true`) rather than a prohibition — the
+point was always that reaching a remote database should be a decision, not an
+accident. `render.yaml` and a production launcher ship; the default is still
+laptop-local.
+
 ---
 
 ### 2. The schema is split into market truth and user truth.

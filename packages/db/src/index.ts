@@ -15,16 +15,31 @@ loadEnvFile()
 const DEFAULT_LOCAL_URL = 'postgresql://since:since@localhost:5544/since'
 const url = process.env.DATABASE_URL ?? DEFAULT_LOCAL_URL
 
-// Guard rail: this project is deliberately laptop-local. Refuse to connect to
-// anything that is not loopback, so a stray env var can never point it elsewhere.
+/**
+ * Guard rail: refuse a non-loopback database unless someone has deliberately
+ * said otherwise.
+ *
+ * This project is laptop-local by default, and a stray DATABASE_URL should not
+ * be able to point it at a stranger's server. Deployment is a real use case, so
+ * it gets an explicit opt-in rather than the guard being deleted — the point is
+ * that reaching a remote database has to be a decision, not an accident.
+ */
 const host = new URL(url).hostname
-if (!['localhost', '127.0.0.1', '::1'].includes(host)) {
+const isLoopback = ['localhost', '127.0.0.1', '::1'].includes(host)
+const allowRemote = /^(1|true|yes)$/i.test(process.env.ALLOW_REMOTE_DB ?? '')
+
+if (!isLoopback && !allowRemote) {
   throw new Error(
-    `Refusing to connect to non-local database host "${host}". Since runs on this machine only.`,
+    `Refusing to connect to non-local database host "${host}". ` +
+    `Since is laptop-local by default; set ALLOW_REMOTE_DB=true to deploy.`,
   )
 }
 
-export const sql = postgres(url, { max: 10 })
+// Managed Postgres terminates plaintext connections; local Docker has no TLS.
+export const sql = postgres(url, {
+  max: Number(process.env.DB_POOL_MAX ?? 10),
+  ...(isLoopback ? {} : { ssl: 'require' as const }),
+})
 export const db = drizzle(sql, { schema })
 export * from './schema.js'
 export { schema }

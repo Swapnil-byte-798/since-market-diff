@@ -1,0 +1,48 @@
+# Render blueprint for Since.
+#
+# One web service and one Postgres. The API is not exposed: Next proxies /api to
+# it over loopback (see next.config.mjs), so a deployment has the same request
+# path as a laptop and there is no second public surface to secure.
+#
+# Deploy: Render dashboard -> New -> Blueprint -> point at this repo.
+
+databases:
+  - name: since-db
+    databaseName: since
+    user: since
+    plan: free            # Render removes free databases after 30 days.
+
+services:
+  - type: web
+    name: since
+    runtime: node
+    plan: free            # Sleeps after 15 minutes idle; first request ~50s.
+    region: singapore     # Closest to an Indian audience.
+    buildCommand: npm install && npm run build && npm run deploy:seed
+    startCommand: npm start
+    healthCheckPath: /
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: since-db
+          property: connectionString
+      # The database client refuses non-loopback hosts unless this is set, so a
+      # stray DATABASE_URL cannot point a laptop at someone else's server.
+      - key: ALLOW_REMOTE_DB
+        value: "true"
+      - key: NODE_VERSION
+        value: "20"
+      - key: API_PORT
+        value: "4000"
+      # Free Postgres allows few connections; two processes share them.
+      - key: DB_POOL_MAX
+        value: "5"
+      # Optional: enables the investigation agent. Without it the deterministic
+      # engine explains changes, which is the default path rather than a
+      # degraded one. Set this in the Render dashboard, not in this file.
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: AGENT_PROVIDER
+        value: gemini
+      - key: AGENT_MODEL
+        value: gemini-3.5-flash,gemini-3.7-flash,gemini-3.1-flash-lite

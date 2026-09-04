@@ -32,7 +32,9 @@
     "validate": "node scripts/validate.mjs",
     "env:init": "node scripts/env-init.mjs",
     "eval:us": "npm run -w @since/eval start -- us",
-    "agent:check": "tsx scripts/agent-check.ts"
+    "agent:check": "tsx scripts/agent-check.ts",
+    "start": "node scripts/serve.mjs",
+    "deploy:seed": "tsx scripts/deploy-seed.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",
