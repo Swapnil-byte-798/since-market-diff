@@ -115,7 +115,10 @@ interface TwelveDataResponse {
 export function mapSymbol(symbolId: string): { symbol: string; exchange: string | null } {
   if (symbolId === '^NSEI') return { symbol: 'NIFTY 50', exchange: 'NSE' }
   if (symbolId === '^NSEBANK') return { symbol: 'NIFTY BANK', exchange: 'NSE' }
-  return { symbol: symbolId.replace(/\.NS$/, ''), exchange: 'NSE' }
+  // NSE ids carry a .NS suffix; anything else is a US ticker, which the free
+  // tier serves without an exchange qualifier.
+  if (symbolId.endsWith('.NS')) return { symbol: symbolId.slice(0, -3), exchange: 'NSE' }
+  return { symbol: symbolId, exchange: null }
 }
 
 function num(v: unknown): number {

@@ -659,10 +659,31 @@ app.post('/api/changes/:id/feedback', async (req) => {
  * written into the code, so the setting can never advertise a number the
  * harness did not produce.
  */
-function evalReport(): Record<string, unknown> | null {
-  try {
-    return JSON.parse(readFileSync(new URL('../../../eval/out/results.json', import.meta.url), 'utf8'))
-  } catch { return null }
+/**
+ * The evaluation to quote.
+ *
+ * Two runs exist. The product universe is NSE, but free NSE feeds are gated
+ * behind paid plans, so that dataset is generated. The US run uses real market
+ * data from the same harness and the same scoring code — so it is the one that
+ * supports a claim about markets, and it is what the app quotes when present.
+ */
+function evalReport(prefer: 'real' | 'product' = 'real'): Record<string, unknown> | null {
+  const files = prefer === 'real' ? ['results.us.json', 'results.json'] : ['results.json']
+  for (const f of files) {
+    try {
+      return JSON.parse(readFileSync(new URL(`../../../eval/out/${f}`, import.meta.url), 'utf8'))
+    } catch { /* try the next */ }
+  }
+  return null
+}
+
+/** Both runs, so the page can show the real one and disclose the other. */
+function allEvalReports(): { real: unknown | null; product: unknown | null } {
+  const read = (f: string) => {
+    try { return JSON.parse(readFileSync(new URL(`../../../eval/out/${f}`, import.meta.url), 'utf8')) }
+    catch { return null }
+  }
+  return { real: read('results.us.json'), product: read('results.json') }
 }
 
 function budgetStats(): Record<string, { meanPerSession: number; precision: number; recall: number } | null> {
@@ -679,12 +700,10 @@ function budgetStats(): Record<string, { meanPerSession: number; precision: numb
 }
 
 app.get('/api/eval', async () => {
-  try {
-    const raw = readFileSync(new URL('../../../eval/out/results.json', import.meta.url), 'utf8')
-    return JSON.parse(raw)
-  } catch {
-    throw notFound('No evaluation results yet. Run `npm run eval`.')
-  }
+  const both = allEvalReports()
+  const primary = both.real ?? both.product
+  if (!primary) throw notFound('No evaluation results yet. Run `npm run eval`.')
+  return { ...(primary as object), companion: both.real ? both.product : null }
 })
 
 /**

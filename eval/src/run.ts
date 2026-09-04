@@ -28,7 +28,24 @@ import {
 import { LABELS, isMeaningful } from './labels.js'
 import { RANKERS, CLEAN, type Candidate } from './rankers.js'
 
-const BENCHMARK = '^NSEI'
+/**
+ * Which dataset to evaluate.
+ *
+ *   npm run eval                  the product universe (NSE)
+ *   npm run eval -- --universe us real US market data
+ *
+ * The second exists because free NSE feeds are gated behind paid plans, and a
+ * scoring model measured only against data this repo generated proves nothing
+ * about markets. Same code, same labels, real prices.
+ */
+const args = process.argv.slice(2)
+const uniIdx = args.indexOf('--universe')
+// npm strips unrecognised long flags before they reach the script, so accept a
+// bare positional too: `npm run eval -- us` and `--universe us` both work.
+const UNIVERSE_NAME =
+  (uniIdx >= 0 && args[uniIdx + 1]) ? args[uniIdx + 1]!
+  : args.find((a) => a === 'us' || a === 'nifty50') ?? 'nifty50'
+const BENCHMARK = UNIVERSE_NAME === 'us' ? 'SPY' : '^NSEI'
 const BETA_WINDOW = 60
 const VOL_WINDOW = 20
 const TOP_K = 3
@@ -49,11 +66,19 @@ async function main(): Promise<void> {
   const t0 = Date.now()
   console.log('[eval] loading market data from local Postgres…')
 
+  const wantSuffix = UNIVERSE_NAME === 'us'
   const symbols = (await q.symbolsWithSectors())
-    .filter((s) => !s.isIndex && s.status === 'ACTIVE' && s.id !== '__meta__')
+    .filter((s) => !s.isIndex && s.status === 'ACTIVE' && !s.id.startsWith('__meta__'))
+    // The two universes share a database; select by id shape.
+    .filter((s) => (wantSuffix ? !s.id.endsWith('.NS') : s.id.endsWith('.NS')))
   const indexBars = await q.dailyBarsBetween(BENCHMARK, '1900-01-01', '2999-12-31')
   const indexByDate = new Map(indexBars.map((b) => [b.date, b]))
-  if (indexBars.length < 200) throw new Error('Not enough benchmark history. Run `npm run ingest` first.')
+  if (indexBars.length < 200) {
+    throw new Error(
+      `Not enough history for benchmark ${BENCHMARK}. ` +
+      `Run: npm run ingest -- --universe ${UNIVERSE_NAME}`,
+    )
+  }
 
   const series: Series[] = []
   for (const s of symbols) {
@@ -237,6 +262,7 @@ async function main(): Promise<void> {
   const report = {
     generatedAt: new Date().toISOString(),
     dataset: {
+      universe: UNIVERSE_NAME,
       provider: meta.provider, simulated: meta.simulated,
       symbols: series.length, alignedSessions: n,
       calibrationSessions: calEnd, evaluationSessions: evaluatedDays,
@@ -273,10 +299,11 @@ async function main(): Promise<void> {
   }
 
   mkdirSync(new URL('../out/', import.meta.url), { recursive: true })
-  writeFileSync(new URL('../out/results.json', import.meta.url), JSON.stringify(report, null, 2))
-  writeFileSync(new URL('../out/results.md', import.meta.url), markdown(report))
+  const suffix = UNIVERSE_NAME === 'nifty50' ? '' : `.${UNIVERSE_NAME}`
+  writeFileSync(new URL(`../out/results${suffix}.json`, import.meta.url), JSON.stringify(report, null, 2))
+  writeFileSync(new URL(`../out/results${suffix}.md`, import.meta.url), markdown(report))
   console.log('\n' + markdown(report))
-  console.log(`[eval] done in ${((Date.now() - t0) / 1000).toFixed(1)}s → eval/out/results.json`)
+  console.log(`[eval] done in ${((Date.now() - t0) / 1000).toFixed(1)}s → eval/out/results${suffix}.json`)
   await sql.end()
 }
 
@@ -284,9 +311,9 @@ function empty() { return { composite: NaN, residZ: 0, returnPct: 0, rupee: 0, r
 function mean(xs: readonly number[]): number { return xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : 0 }
 
 async function providerMeta(): Promise<{ provider: string; simulated: boolean }> {
-  const rows = await q.symbolsWithSectors(['__meta__'])
+  const rows = await q.symbolsWithSectors([`__meta__:${UNIVERSE_NAME}`])
   const provider = rows[0]?.name?.replace(/^provider:/, '') ?? 'unknown'
-  return { provider, simulated: provider !== 'yahoo' }
+  return { provider, simulated: provider === 'synthetic' || provider === 'unknown' }
 }
 
 function markdown(r: ReturnType<typeof Object> extends never ? never : any): string {
@@ -294,7 +321,7 @@ function markdown(r: ReturnType<typeof Object> extends never ? never : any): str
   lines.push(`### Precision@${r.topK}`)
   lines.push('')
   lines.push(`Dataset: **${r.dataset.provider}**${r.dataset.simulated ? ' (simulated)' : ''} · ` +
-    `${r.dataset.symbols} symbols · ${r.dataset.evaluationSessions} evaluation sessions ` +
+    `${r.dataset.universe} · ${r.dataset.symbols} symbols · ${r.dataset.evaluationSessions} evaluation sessions ` +
     `(calibrated on ${r.dataset.calibrationSessions} disjoint earlier sessions)`)
   lines.push('')
   const labelIds: string[] = r.labels.map((l: any) => l.id)

@@ -16,7 +16,7 @@
     "db:push": "npm run -w @since/db push -- --force",
     "db:studio": "npm run -w @since/db studio",
     "ingest": "npm run -w @since/ingest start --",
-    "eval": "npm run -w @since/eval start",
+    "eval": "npm run -w @since/eval start --",
     "api": "npm run -w @since/api start",
     "web": "npm run -w @since/web dev",
     "dev": "node scripts/dev.mjs",
@@ -30,7 +30,8 @@
     "status": "node scripts/status.mjs",
     "share": "node scripts/share.mjs",
     "validate": "node scripts/validate.mjs",
-    "env:init": "node -e \"const fs=require('fs');if(fs.existsSync('.env')){console.log('  .env already exists \u2014 leaving it alone')}else{fs.copyFileSync('.env.example','.env');console.log('  created .env from .env.example \u2014 add your keys, it is gitignored')}\""
+    "env:init": "node -e \"const fs=require('fs');if(fs.existsSync('.env')){console.log('  .env already exists \u2014 leaving it alone')}else{fs.copyFileSync('.env.example','.env');console.log('  created .env from .env.example \u2014 add your keys, it is gitignored')}\"",
+    "eval:us": "npm run -w @since/eval start -- us"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",

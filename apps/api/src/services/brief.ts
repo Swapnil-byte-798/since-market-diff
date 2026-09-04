@@ -31,9 +31,10 @@ export async function calendar(): Promise<TradingCalendar> {
 
 export async function providerInfo(): Promise<{ provider: string; simulated: boolean }> {
   const rows = await db.select({ name: schema.symbols.name }).from(schema.symbols)
-    .where(eq(schema.symbols.id, '__meta__')).limit(1)
+    .where(eq(schema.symbols.id, '__meta__:nifty50')).limit(1)
   const provider = rows[0]?.name?.replace(/^provider:/, '') ?? 'unknown'
-  return { provider, simulated: provider !== 'yahoo' }
+  // Only the synthetic provider generates data. Anything else is observed.
+  return { provider, simulated: provider === 'synthetic' || provider === 'unknown' }
 }
 
 /**

@@ -39,7 +39,9 @@ export default function EvalPage() {
         <h1 className="lede">We measured our own claim.</h1>
         <p className="mt-4 max-w-prose text-[0.88rem] leading-relaxed text-ink-muted">
           Since claims that market-adjusted surprise finds changes worth your attention better than
-          the percentage change every other watchlist ranks by. That is testable, so we tested it.
+          the percentage change every other watchlist ranks by. That is testable, so we tested it —
+          on {r.dataset.simulated ? 'generated' : 'real'} market data, with the production scoring
+          code, on sessions the calibration never saw.
         </p>
       </header>
 
@@ -163,11 +165,31 @@ export default function EvalPage() {
           </li>
           {r.dataset.simulated ? (
             <li className="border-l-2 border-signal pl-3">
-              <span className="text-ink">This run used simulated data.</span> The NSE feed was
-              rate-limited during ingestion, so these numbers measure the algorithm against data with
-              known structure — not a claim about real markets. Re-running{' '}
-              <span className="font-mono text-[0.75rem]">npm run ingest</span> against the live feed
-              regenerates this page from real NSE history.
+              <span className="text-ink">This run used simulated data.</span> These numbers measure
+              the algorithm against data with known structure — not a claim about real markets.
+            </li>
+          ) : (
+            <li>
+              <span className="text-ink">These numbers come from real market data.</span>{' '}
+              {r.dataset.symbols} US large caps, {r.dataset.alignedSessions} sessions via{' '}
+              {r.dataset.provider}, benchmark {r.dataset.benchmark}. The product itself watches NSE,
+              but free NSE feeds are gated behind paid plans — so the model is validated on the real
+              prices available and demonstrated on Indian equities whose prices are generated and
+              labelled <span className="font-mono text-[0.75rem]">SIMULATED</span> everywhere they
+              appear. Same harness, same scoring code, both ways.
+            </li>
+          )}
+          {r.companion ? (
+            <li className="text-ink-faint">
+              For comparison, the same harness on the generated NSE dataset scored{' '}
+              <span className="tnum">
+                {(r.companion.precisionAtK['since']?.byLabel[r.companion.labels[0]?.id ?? ''] ?? 0).toFixed(3)}
+              </span>{' '}
+              against{' '}
+              <span className="tnum">
+                {(r.companion.precisionAtK['abs-percent']?.byLabel[r.companion.labels[0]?.id ?? ''] ?? 0).toFixed(3)}
+              </span>
+              {' '}— the same direction, on data that proves less.
             </li>
           ) : null}
         </ul>

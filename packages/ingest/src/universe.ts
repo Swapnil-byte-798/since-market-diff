@@ -83,3 +83,95 @@ export const UNIVERSE: SymbolDef[] = [
 
 export const symbolId = (ticker: string) => `${ticker}.NS`
 export const BENCHMARK_ID = BENCHMARK.ticker
+
+
+/* ------------------------------------------------------------- US universe */
+
+/**
+ * A US universe, used ONLY to validate the scoring model against real market
+ * data.
+ *
+ * The product is built for NSE and the demo stays there. But free NSE feeds are
+ * gated behind paid plans, and a model validated only against data I generated
+ * proves nothing about markets. Twelve Data's free tier serves real US equities,
+ * so the evaluation runs on those: the claim becomes "this ranking beats
+ * percentage change on real market data" rather than "on my own simulation".
+ *
+ * Sectors mirror the NSE mapping so the same grouping logic applies unchanged.
+ */
+export const US_BENCHMARK = { ticker: 'SPY', name: 'S&P 500 ETF' } as const
+
+export const US_UNIVERSE: SymbolDef[] = [
+  { ticker: 'JPM', name: 'JPMorgan Chase', sectorId: 'FIN' },
+  { ticker: 'BAC', name: 'Bank of America', sectorId: 'FIN' },
+  { ticker: 'WFC', name: 'Wells Fargo', sectorId: 'FIN' },
+  { ticker: 'GS', name: 'Goldman Sachs', sectorId: 'FIN' },
+  { ticker: 'MS', name: 'Morgan Stanley', sectorId: 'FIN' },
+  { ticker: 'C', name: 'Citigroup', sectorId: 'FIN' },
+  { ticker: 'AXP', name: 'American Express', sectorId: 'FIN' },
+  { ticker: 'BLK', name: 'BlackRock', sectorId: 'FIN' },
+  { ticker: 'AAPL', name: 'Apple', sectorId: 'IT' },
+  { ticker: 'MSFT', name: 'Microsoft', sectorId: 'IT' },
+  { ticker: 'NVDA', name: 'NVIDIA', sectorId: 'IT' },
+  { ticker: 'AVGO', name: 'Broadcom', sectorId: 'IT' },
+  { ticker: 'ORCL', name: 'Oracle', sectorId: 'IT' },
+  { ticker: 'CRM', name: 'Salesforce', sectorId: 'IT' },
+  { ticker: 'ADBE', name: 'Adobe', sectorId: 'IT' },
+  { ticker: 'AMD', name: 'Advanced Micro Devices', sectorId: 'IT' },
+  { ticker: 'INTC', name: 'Intel', sectorId: 'IT' },
+  { ticker: 'CSCO', name: 'Cisco Systems', sectorId: 'IT' },
+  { ticker: 'XOM', name: 'Exxon Mobil', sectorId: 'ENERGY' },
+  { ticker: 'CVX', name: 'Chevron', sectorId: 'ENERGY' },
+  { ticker: 'COP', name: 'ConocoPhillips', sectorId: 'ENERGY' },
+  { ticker: 'SLB', name: 'Schlumberger', sectorId: 'ENERGY' },
+  { ticker: 'PG', name: 'Procter & Gamble', sectorId: 'FMCG' },
+  { ticker: 'KO', name: 'Coca-Cola', sectorId: 'FMCG' },
+  { ticker: 'PEP', name: 'PepsiCo', sectorId: 'FMCG' },
+  { ticker: 'COST', name: 'Costco', sectorId: 'FMCG' },
+  { ticker: 'WMT', name: 'Walmart', sectorId: 'FMCG' },
+  { ticker: 'MCD', name: "McDonald's", sectorId: 'FMCG' },
+  { ticker: 'TSLA', name: 'Tesla', sectorId: 'AUTO' },
+  { ticker: 'F', name: 'Ford Motor', sectorId: 'AUTO' },
+  { ticker: 'GM', name: 'General Motors', sectorId: 'AUTO' },
+  { ticker: 'JNJ', name: 'Johnson & Johnson', sectorId: 'PHARMA' },
+  { ticker: 'PFE', name: 'Pfizer', sectorId: 'PHARMA' },
+  { ticker: 'MRK', name: 'Merck', sectorId: 'PHARMA' },
+  { ticker: 'ABBV', name: 'AbbVie', sectorId: 'PHARMA' },
+  { ticker: 'LLY', name: 'Eli Lilly', sectorId: 'PHARMA' },
+  { ticker: 'UNH', name: 'UnitedHealth', sectorId: 'PHARMA' },
+  { ticker: 'NEM', name: 'Newmont', sectorId: 'METAL' },
+  { ticker: 'FCX', name: 'Freeport-McMoRan', sectorId: 'METAL' },
+  { ticker: 'NUE', name: 'Nucor', sectorId: 'METAL' },
+  { ticker: 'CAT', name: 'Caterpillar', sectorId: 'INFRA' },
+  { ticker: 'DE', name: 'Deere', sectorId: 'INFRA' },
+  { ticker: 'HON', name: 'Honeywell', sectorId: 'INFRA' },
+  { ticker: 'GE', name: 'General Electric', sectorId: 'INFRA' },
+  { ticker: 'BA', name: 'Boeing', sectorId: 'INFRA' },
+  { ticker: 'T', name: 'AT&T', sectorId: 'TELECOM' },
+  { ticker: 'VZ', name: 'Verizon', sectorId: 'TELECOM' },
+  { ticker: 'TMUS', name: 'T-Mobile US', sectorId: 'TELECOM' },
+  { ticker: 'NEE', name: 'NextEra Energy', sectorId: 'POWER' },
+  { ticker: 'DUK', name: 'Duke Energy', sectorId: 'POWER' },
+  { ticker: 'SO', name: 'Southern Company', sectorId: 'POWER' },
+]
+
+export type UniverseName = 'nifty50' | 'us'
+
+export function universeFor(name: UniverseName): {
+  symbols: SymbolDef[]
+  benchmarkId: string
+  benchmarkName: string
+  exchange: string
+  suffix: string
+} {
+  if (name === 'us') {
+    return {
+      symbols: US_UNIVERSE, benchmarkId: US_BENCHMARK.ticker,
+      benchmarkName: US_BENCHMARK.name, exchange: 'US', suffix: '',
+    }
+  }
+  return {
+    symbols: UNIVERSE, benchmarkId: BENCHMARK_ID,
+    benchmarkName: BENCHMARK.name, exchange: 'NSE', suffix: '.NS',
+  }
+}

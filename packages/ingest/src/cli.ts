@@ -10,9 +10,9 @@
  *   npm run ingest -- --no-faults       skip injected data-quality faults
  */
 import { sql, db, schema } from '@since/db'
-import { desc, eq, sql as dsql } from 'drizzle-orm'
+import { desc, eq, inArray, sql as dsql } from 'drizzle-orm'
 import { detectSuspectBar, logReturn, type DailyBar } from '@since/core'
-import { UNIVERSE, SECTORS, BENCHMARK, BENCHMARK_ID, symbolId } from './universe.js'
+import { SECTORS, universeFor, type UniverseName } from './universe.js'
 import { YahooProvider } from './providers/yahoo.js'
 import { SyntheticProvider } from './providers/synthetic.js'
 import { TwelveDataProvider } from './providers/twelvedata.js'
@@ -31,6 +31,14 @@ const YEARS = Number(opt('years', '3'))
 const INTRADAY_DAYS = Number(opt('intraday-days', '55'))
 const WITH_FAULTS = !flag('no-faults')
 const CLEAN = flag('clean')
+/**
+ * Which universe to load.
+ *
+ * `nifty50` is the product. `us` exists so the evaluation can run against real
+ * market data: free NSE feeds are gated behind paid plans, and a model measured
+ * only on data I generated proves nothing about markets.
+ */
+const UNIVERSE_NAME = opt('universe', 'nifty50') as UniverseName
 // Twelve Data's free tier allows 8 req/min, so real runs are serialised by the
 // provider's own throttle regardless of this.
 const CONCURRENCY = Number(opt('concurrency', '3'))
@@ -84,16 +92,29 @@ async function main(): Promise<void> {
 
   let provider: MarketDataProvider = buildProvider(PROVIDER, toDate)
 
-  log(`provider=${provider.source} simulated=${provider.isSimulated} range=${fromDate}..${toDate}`)
+  const uni = universeFor(UNIVERSE_NAME)
+  const UNIVERSE = uni.symbols
+  const BENCHMARK_ID = uni.benchmarkId
+  const symbolId = (t: string) => `${t}${uni.suffix}`
+
+  log(`provider=${provider.source} simulated=${provider.isSimulated} universe=${UNIVERSE_NAME} ` +
+      `(${UNIVERSE.length} symbols, benchmark ${BENCHMARK_ID}) range=${fromDate}..${toDate}`)
 
   // Mixing providers inside one dataset would silently corrupt every statistic:
   // real bars for 2024 and synthetic bars for 2026 produce a fictitious return
   // at the seam. --clean makes a run reproducible from empty.
   if (CLEAN) {
-    await db.execute(dsql`TRUNCATE daily_bars, intraday_bars, corporate_actions,
-      market_events, symbol_stats, observations, change_events, data_quarantine
-      RESTART IDENTITY CASCADE`)
-    log('cleaned market-truth tables (--clean)')
+    // Scoped to this universe: wiping everything would destroy the other
+    // dataset, and the two are ingested independently.
+    const ids = [BENCHMARK_ID, ...UNIVERSE.map((s) => symbolId(s.ticker))]
+    await db.delete(schema.dailyBars).where(inArray(schema.dailyBars.symbolId, ids))
+    await db.delete(schema.intradayBars).where(inArray(schema.intradayBars.symbolId, ids))
+    await db.delete(schema.corporateActions).where(inArray(schema.corporateActions.symbolId, ids))
+    await db.delete(schema.marketEvents).where(inArray(schema.marketEvents.symbolId, ids))
+    await db.delete(schema.symbolStats).where(inArray(schema.symbolStats.symbolId, ids))
+    await db.delete(schema.observations).where(inArray(schema.observations.symbolId, ids))
+    await db.delete(schema.dataQuarantine).where(inArray(schema.dataQuarantine.symbolId, ids))
+    log(`cleaned market-truth rows for the ${UNIVERSE_NAME} universe (--clean)`)
   }
 
   // ---- reference data ------------------------------------------------------
@@ -106,12 +127,12 @@ async function main(): Promise<void> {
 
   await db.insert(schema.symbols).values([
     {
-      id: BENCHMARK_ID, ticker: BENCHMARK.ticker, name: BENCHMARK.name,
-      exchange: 'NSE', sectorId: null, isIndex: true, status: 'ACTIVE' as const,
+      id: BENCHMARK_ID, ticker: BENCHMARK_ID, name: uni.benchmarkName,
+      exchange: uni.exchange, sectorId: null, isIndex: true, status: 'ACTIVE' as const,
     },
     ...UNIVERSE.map((s) => ({
       id: symbolId(s.ticker), ticker: s.ticker, name: s.name,
-      exchange: 'NSE', sectorId: s.sectorId, isIndex: false, status: 'ACTIVE' as const,
+      exchange: uni.exchange, sectorId: s.sectorId, isIndex: false, status: 'ACTIVE' as const,
     })),
   ]).onConflictDoUpdate({
     target: schema.symbols.id,
@@ -135,15 +156,20 @@ async function main(): Promise<void> {
   if (indexBars.length === 0) {
     throw new Error(`No benchmark data for ${BENCHMARK_ID}. Cannot build a trading calendar.`)
   }
+  // Per universe: a global marker would make the NSE dataset claim the US
+  // dataset's provider the moment both are ingested.
   await db.insert(schema.symbols).values({
-    id: '__meta__', ticker: '__meta__', name: `provider:${provider.source}`,
-    exchange: 'NSE', sectorId: null, isIndex: true, status: 'SUSPENDED' as const,
+    id: `__meta__:${UNIVERSE_NAME}`, ticker: `__meta__:${UNIVERSE_NAME}`,
+    name: `provider:${provider.source}`,
+    exchange: uni.exchange, sectorId: null, isIndex: true, status: 'SUSPENDED' as const,
   }).onConflictDoUpdate({
     target: schema.symbols.id, set: { name: dsql.raw(`excluded."name"`) as never },
   })
   await writeDailyBars(BENCHMARK_ID, indexBars)
-  const indexIntraday = await provider.intradayBars(BENCHMARK_ID, intradayFrom, toDate)
-  await writeIntradayBars(BENCHMARK_ID, indexIntraday)
+  const indexIntraday = UNIVERSE_NAME === 'nifty50'
+    ? await provider.intradayBars(BENCHMARK_ID, intradayFrom, toDate)
+    : []
+  if (indexIntraday.length) await writeIntradayBars(BENCHMARK_ID, indexIntraday)
   log(`benchmark: ${indexBars.length} sessions, ${indexIntraday.length} intraday bars`)
 
   // ---- symbols -------------------------------------------------------------
@@ -160,8 +186,11 @@ async function main(): Promise<void> {
       if (bars.length < 80) { failures.push(`${id} (only ${bars.length} bars)`); return }
       await writeDailyBars(id, bars)
 
-      const intraday = await provider.intradayBars(id, intradayFrom, toDate)
-      if (intraday.length) await writeIntradayBars(id, intraday)
+      // Intraday powers replay, which only the product universe needs.
+      if (UNIVERSE_NAME === 'nifty50') {
+        const intraday = await provider.intradayBars(id, intradayFrom, toDate)
+        if (intraday.length) await writeIntradayBars(id, intraday)
+      }
 
       const actions = await provider.corporateActions(id, fromDate, toDate)
       if (actions.length) {
@@ -256,8 +285,12 @@ async function main(): Promise<void> {
     log('peer fallback calibration grid stored on the benchmark row')
   }
 
-  await seedDemoUser(indexBars)
-  if (WITH_FAULTS) await injectFaults(indexBars)
+  if (UNIVERSE_NAME === 'nifty50') {
+    await seedDemoUser(indexBars, UNIVERSE, symbolId)
+    if (WITH_FAULTS) await injectFaults(indexBars)
+  } else {
+    log('us universe: skipping demo seeding and fault injection (evaluation only)')
+  }
 
   log(`done in ${((Date.now() - t0) / 1000).toFixed(1)}s`)
   await sql.end()
@@ -305,7 +338,11 @@ async function writeLatestObservation(id: string, bars: readonly DailyBar[], sou
   }).onConflictDoNothing()
 }
 
-async function seedDemoUser(indexBars: readonly DailyBar[]): Promise<void> {
+async function seedDemoUser(
+  indexBars: readonly DailyBar[],
+  UNIVERSE: { ticker: string }[],
+  symbolId: (t: string) => string,
+): Promise<void> {
   const userId = 'user_demo'
   await db.insert(schema.users).values({
     id: userId, email: DEMO_EMAIL, displayName: 'Demo',

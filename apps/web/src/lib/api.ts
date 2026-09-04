@@ -173,7 +173,8 @@ export interface Settings {
 export interface EvalReport {
   generatedAt: string
   dataset: { provider: string; simulated: boolean; symbols: number; alignedSessions: number
-    calibrationSessions: number; evaluationSessions: number; benchmark: string }
+    calibrationSessions: number; evaluationSessions: number; benchmark: string; universe?: string }
+  companion?: EvalReport | null
   topK: number
   labels: { id: string; description: string; horizon: number; sigmas: number }[]
   precisionAtK: Record<string, { label: string; byLabel: Record<string, number> }>

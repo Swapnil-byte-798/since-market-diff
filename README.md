@@ -91,11 +91,12 @@ And because the score is a percentile, the attention setting becomes a
 
 | Budget | Threshold | Alerts/session | Precision | Recall |
 |---|---|---|---|---|
-| Low | p99 | 0.72 | **0.246** | 0.023 |
-| Medium | p95 | 2.70 | 0.196 | 0.069 |
-| High | p90 | 4.84 | 0.186 | **0.117** |
+| Low | p99 | 0.40 | **0.339** | 0.013 |
+| Medium | p95 | 2.19 | 0.328 | 0.069 |
+| High | p90 | 4.64 | 0.295 | **0.132** |
 
-None of those are estimates — all are measured over 165 held-out sessions by
+None of those are estimates — all are measured over 298 held-out sessions of real
+market data by
 `npm run eval`, and the app reads them from that file rather than hardcoding them.
 The trade-off is visible rather than argued: the quietest setting is the most
 precise and catches the least; the most sensitive catches ~5x as much for a few
@@ -118,39 +119,50 @@ explains everything, the app says so and shows nothing:
 Every watchlist asserts its ranking is smart. This one is measured against the dumb
 baselines, on held-out data, using the production scoring code.
 
-### Precision@3
+### Precision@3, on real market data
 
-50 symbols · 165 evaluation sessions · calibrated on 251 **disjoint earlier** sessions
+50 US large caps · 753 sessions via Twelve Data · benchmark SPY
+298 evaluation sessions, calibrated on 451 **disjoint earlier** sessions
 
 | Ranker | followthrough-1.5σ-2d | followthrough-2.0σ-3d | followthrough-1.0σ-1d |
 |---|---|---|---|
-| Absolute % change (baseline) | 0.158 | 0.059 | 0.354 |
-| Absolute ₹ move (baseline) | 0.149 | 0.044 | 0.364 |
-| Market-adjusted residual only (ablation) | 0.188 | **0.083** | 0.384 |
-| **Since composite** | **0.202** | 0.081 | **0.396** |
+| Absolute % change (baseline) | 0.225 | 0.134 | 0.415 |
+| Absolute move (baseline) | 0.238 | 0.136 | 0.393 |
+| Market-adjusted residual only (ablation) | 0.301 | 0.182 | 0.461 |
+| **Since composite** | **0.312** | **0.188** | **0.490** |
 
-**+28% over the %-change baseline** on the primary label, and the ablation row is
-the interesting one: the market adjustment does most of the work, and the remaining
-signals add roughly 7% on top of it. On the longest horizon the extra signals
-slightly *hurt* — reported rather than hidden.
+**+39% over the %-change baseline**, winning on all three label definitions. The
+ablation row is the interesting one: the market adjustment does most of the work,
+and the remaining signals add roughly 4% on top of it.
 
 Three properties make these numbers worth reading:
 
 1. **The harness runs the production code.** `computeSignals` is imported from
-   `@since/core` — literally the function the API calls. There is no second scoring
-   implementation that could drift.
+   `@since/core` — literally the function the API calls. There is no second
+   scoring implementation that could drift.
 2. **It is causal.** Beta, residual scale and volume baselines at date *t* are
    fitted only on data before *t*; the calibration grids come from a disjoint
    earlier period.
 3. **Three labels, not one.** A result that only survives the definition you
    happened to pick is not a result.
 
-> ⚠️ **These numbers were produced on simulated data.** Yahoo rate-limited this
-> machine mid-ingestion and never released it, so the shipped dataset is the
-> deterministic synthetic provider. They are an honest measurement of the algorithm
-> against data with known structure — **not evidence about real markets.**
-> `npm run ingest` regenerates everything from live NSE history when the feed is
-> available. See *Limitations*.
+#### Why US data for a product built on NSE
+
+The product watches Indian equities, which is where a Groww-shaped watchlist
+belongs. But every free NSE feed was unavailable: Yahoo rate-limits by IP and
+refused entire Indian mobile carrier ranges, NSE's own site blocks non-browser
+traffic at the edge, and Twelve Data gates NSE behind a paid plan while serving
+US equities free.
+
+Rather than validate the model against data this repository generated — which
+would prove nothing about markets — the evaluation runs on the real prices that
+were actually obtainable, through the same harness and the same scoring code.
+The demo dataset stays NSE, and every price in it is labelled `SIMULATED`
+wherever it appears.
+
+Running the same harness on the generated NSE dataset gives 0.202 against 0.158
+— the same direction, on data that proves less. Both reports ship:
+`eval/out/results.us.json` and `eval/out/results.json`.
 
 Regenerate: `npm run eval` → `eval/out/results.json`, rendered at `/eval`.
 
@@ -339,7 +351,8 @@ Audited against the specification this was built to. Nothing below is aspiration
 | All 18 specified API endpoints (20 total) | done |
 | 69 tests, 7 packages typechecked, production build clean | done |
 | Agent: hypothesis elimination, 9 typed tools, guards, deterministic fallback | **code complete; never run against a live model** |
-| Real NSE market data | **blocked — Yahoo IP rate limit** |
+| Evaluation on real market data | done — 753 sessions, Twelve Data |
+| Real NSE prices in the demo | **blocked — every free NSE feed gated or IP-banned** |
 | Frontend component tests | not done, deliberately |
 | Feedback loop feeding into weights | not done — votes are stored only |
 
@@ -425,12 +438,14 @@ Every one of those would have made the feature list longer and the product worse
 
 **Honest ones, not the flattering kind.**
 
-1. **The shipped dataset is simulated.** Yahoo rate-limits by IP and blocked the
-   build machine's entire mobile carrier range — confirmed by their homepage
-   returning 429 while every other host resolved normally, across two different
-   carrier IPs. NSE's own site blocks non-browser traffic at the edge (403), and
-   the remaining free sources sit behind bot challenges. A `TwelveDataProvider`
-   is implemented behind the same seam and needs only a free key. The evaluation numbers measure the algorithm
+1. **The demo dataset is simulated; the evaluation is not.** Every free NSE feed
+   proved unavailable — Yahoo refused entire Indian mobile carrier ranges (their
+   homepage returned 429 while every other host resolved, across two carrier IPs),
+   NSE's own site returns 403 to non-browser traffic, and Twelve Data gates NSE
+   behind a paid plan. So the model is validated on 753 sessions of real US market
+   data and demonstrated on NSE symbols whose prices are generated and labelled
+   `SIMULATED` everywhere they appear. A paid NSE plan, or an unblocked network,
+   makes the demo real too: `npm run ingest`. The evaluation numbers measure the algorithm
    against data with known structure — they are not a claim about real markets.
    The provider seam makes this a one-flag switch, and the real adapter is written,
    typed and used (it ingested 11,760 real NSE bars before the block).
