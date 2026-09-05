@@ -10,24 +10,9 @@
  */
 import { sql, db, schema } from '@since/db'
 import { desc, eq, inArray } from 'drizzle-orm'
-import { marketFor, istParts } from '@since/core'
+import { marketFor, istParts, instantAtLocalMinute } from '@since/core'
 
 const USER = 'user_demo'
-
-/**
- * The instant, in UTC, whose local time on `date` is `minute` past midnight in
- * `timeZone`. Walked rather than offset-arithmetic, so DST is handled and this
- * works for any exchange.
- */
-function instantAt(date: string, minute: number, timeZone: string): Date {
-  const base = Date.parse(`${date}T00:00:00.000Z`)
-  for (let step = 0; step < 96; step++) {
-    const candidate = new Date(base + step * 15 * 60_000)
-    const p = istParts(candidate, timeZone)
-    if (p.date === date && p.minutes >= minute) return candidate
-  }
-  return new Date(base)
-}
 
 // Which market is seeded decides the benchmark and the session clock.
 const [watched] = await db.select({ symbolId: schema.watchlistItems.symbolId })
@@ -63,7 +48,7 @@ if (!anchor) {
 
 // The open, so the window covers whole sessions rather than starting halfway
 // through one — a partial first session makes "3 sessions away" a lie.
-const lastSeenAt = instantAt(anchor.date, market.openMinute, market.timeZone)
+const lastSeenAt = instantAtLocalMinute(anchor.date, market.openMinute, market.timeZone)
 
 const items = await db.select({ symbolId: schema.watchlistItems.symbolId })
   .from(schema.watchlistItems)

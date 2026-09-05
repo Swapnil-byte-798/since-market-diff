@@ -112,15 +112,7 @@ export class TradingCalendar {
 
   /** The instant a given session closed, in UTC. */
   closeInstant(date: string): Date {
-    // Walk back from midnight UTC to find the instant whose local time is the
-    // close. Avoids hardcoding an offset, so DST is handled for any market.
-    const base = Date.parse(`${date}T00:00:00.000Z`)
-    for (let guess = 0; guess < 48; guess++) {
-      const candidate = new Date(base + guess * 30 * 60_000)
-      const p = istParts(candidate, this.tz)
-      if (p.date === date && p.minutes >= this.closeMin) return candidate
-    }
-    return new Date(base + 20 * 3600_000)
+    return instantAtLocalMinute(date, this.closeMin, this.tz)
   }
 
   get allSessions(): readonly string[] { return this.sessions }
@@ -144,4 +136,25 @@ export function humanDuration(ms: number): string {
   const hrem = hours % 24
   if (days < 7) return hrem > 0 ? `${days}d ${hrem}h` : `${days}d`
   return `${days}d`
+}
+
+/**
+ * The UTC instant whose local time on `date` is `minute` past midnight in `timeZone`.
+ *
+ * Walked in fifteen-minute steps rather than computed from a fixed offset, so
+ * DST is handled and this works for any exchange. Shared deliberately: the same
+ * calculation is needed by the session calendar, by the ingest when it stamps
+ * an observation with the close it belongs to, and by the demo reset. It was
+ * previously open-coded in each, and two of those copies had `10:00Z` — the
+ * NSE close — burned in, which silently mis-stamped every US observation by ten
+ * hours and made the quality gate treat every closing price as decaying data.
+ */
+export function instantAtLocalMinute(date: string, minute: number, timeZone: string): Date {
+  const base = Date.parse(`${date}T00:00:00.000Z`)
+  for (let step = 0; step < 96; step++) {
+    const candidate = new Date(base + step * 15 * 60_000)
+    const p = istParts(candidate, timeZone)
+    if (p.date === date && p.minutes >= minute) return candidate
+  }
+  return new Date(base + 20 * 3600_000)
 }

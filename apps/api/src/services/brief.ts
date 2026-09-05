@@ -108,6 +108,9 @@ export async function evaluateBrief(params: {
   const marketPayload = {
     id: market.id, label: market.label, timeZone: market.timeZone,
     currency: market.currency, locale: market.locale, benchmark: market.benchmarkLabel,
+    // The instant the last session closed, so the client can offer "last close"
+    // without re-deriving an exchange calendar it does not have.
+    lastCloseAt: cal.lastSessionCloseAt(at)?.toISOString() ?? null,
   }
   const emptyWindow = resolveWindow({ lastSeenAt: null, at, calendar: cal })
   // Sentinel for the reduce below: any real cursor must beat it.

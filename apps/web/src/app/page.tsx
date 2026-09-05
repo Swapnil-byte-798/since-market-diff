@@ -43,6 +43,7 @@ export default function BriefPage() {
       <TimeTravel
         value={at}
         windowStart={brief.window.windowStart}
+        market={brief.market}
         onChange={setAt}
       />
 

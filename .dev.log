@@ -91,3 +91,12 @@
 [api] {"level":30,"time":1788598289176,"pid":37383,"hostname":"cooks-MacBook-Pro.local","reqId":"req-r","res":{"statusCode":200},"responseTime":14.136089999985415,"msg":"request completed"}
 [api] {"level":30,"time":1788598289196,"pid":37383,"hostname":"cooks-MacBook-Pro.local","reqId":"req-s","req":{"method":"GET","url":"/api/settings","host":"127.0.0.1:4000","remoteAddress":"127.0.0.1","remotePort":51525},"msg":"incoming request"}
 [api] {"level":30,"time":1788598289217,"pid":37383,"hostname":"cooks-MacBook-Pro.local","reqId":"req-s","res":{"statusCode":200},"responseTime":5.660573999979533,"msg":"request completed"}
+[api] npm error Lifecycle script `start` failed with error:
+[api] npm error code 143
+[api] npm error path /Users/cook/since-market-diff/apps/api
+[api] npm error workspace @since/api
+[api] npm error location /Users/cook/since-market-diff/apps/api
+[api] npm error command failed
+[api] npm error command sh -c tsx src/server.ts
+[api] exited (143)
+[web] [?25h

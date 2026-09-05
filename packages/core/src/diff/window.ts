@@ -44,7 +44,9 @@ export function resolveWindow(params: {
     const sessions = calendar.allSessions
     const idx = Math.max(0, sessions.length - 1 - firstVisitSessions)
     const startDate = sessions[idx] ?? sessions[0]
-    const windowStart = startDate ? new Date(`${startDate}T10:00:00.000Z`) : at
+    // The calendar knows when that session actually closed; a literal here
+    // would be the NSE bell, which is the middle of the night in New York.
+    const windowStart = startDate ? calendar.closeInstant(startDate) : at
     return {
       windowStart,
       windowEnd: at,

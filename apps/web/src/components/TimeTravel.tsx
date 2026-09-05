@@ -11,15 +11,16 @@ import { dateIST, timeIST } from './format'
  * through exactly the same code path the live brief uses.
  */
 export function TimeTravel({
-  value, windowStart, onChange,
+  value, windowStart, market, onChange,
 }: {
   value: string | undefined
   windowStart: string
+  market?: { timeZone?: string; locale?: string; lastCloseAt?: string | null }
   onChange: (v: string | undefined) => void
 }) {
   const [open, setOpen] = useState(false)
 
-  const presets = buildPresets()
+  const presets = buildPresets(market?.lastCloseAt ?? null)
   const active = value !== undefined
 
   return (
@@ -77,15 +78,22 @@ export function TimeTravel({
   )
 }
 
-function buildPresets(): { label: string; iso: string }[] {
-  const now = new Date()
-  const closeToday = new Date(now)
-  closeToday.setUTCHours(10, 0, 0, 0)           // 15:30 IST
+/**
+ * Offsets from the last close the server reported.
+ *
+ * This used to set 10:00 UTC — the NSE bell — which on a US watchlist is 6am in
+ * New York, three and a half hours before the market opens. "Last close" then
+ * pointed at an instant with no session behind it. The server already knows
+ * when the exchange actually closed, so it says so and this follows.
+ */
+function buildPresets(lastCloseAt: string | null): { label: string; iso: string }[] {
+  const anchor = lastCloseAt ? new Date(lastCloseAt) : null
+  if (!anchor || Number.isNaN(anchor.getTime())) return []
   const out: { label: string; iso: string }[] = [
-    { label: 'Last close', iso: closeToday.toISOString() },
+    { label: 'Last close', iso: anchor.toISOString() },
   ]
   for (const back of [1, 3, 7]) {
-    const d = new Date(closeToday)
+    const d = new Date(anchor)
     d.setUTCDate(d.getUTCDate() - back)
     out.push({ label: `${back} day${back > 1 ? 's' : ''} ago`, iso: d.toISOString() })
   }

@@ -146,3 +146,51 @@ describe('quality precedence', () => {
     expect(r2.quality).toBe('CONFLICTING')
   })
 })
+
+/**
+ * A closing price must not rot while the market is shut.
+ *
+ * The gate already reasoned in market time, but the ingest stamped every
+ * observation with the NSE close (10:00Z) regardless of exchange. For US
+ * symbols that sat ten hours before the real close, so `sinceClose` never fell
+ * inside the closing-price window and every price fell through to the
+ * wall-clock rule instead — DELAYED for 36 hours, then STALE. Left over a
+ * weekend the entire watchlist self-suppressed and the product showed nothing
+ * at all, which is the most expensive way possible to be quietly wrong.
+ */
+describe('a closing price while the market is shut', () => {
+  const close = new Date('2026-09-04T20:00:00.000Z')   // 16:00 America/New_York
+
+  const at = (hoursLater: number) => assessFreshness({
+    observedAt: close,
+    evaluatedAt: new Date(close.getTime() + hoursLater * 3600_000),
+    marketIsOpen: false,
+    lastSessionCloseAt: close,
+  })
+
+  it('is FRESH immediately after the bell', () => {
+    expect(at(0.5).quality).toBe('FRESH')
+  })
+
+  it('is still FRESH the next morning', () => {
+    expect(at(14).quality).toBe('FRESH')
+  })
+
+  it('is still FRESH across a whole weekend', () => {
+    // The case that mattered: a Friday close read on Monday morning.
+    expect(at(62).quality).toBe('FRESH')
+    expect(at(62).reason).toBe('Closing price')
+  })
+
+  it('still goes STALE when the observation misses the close', () => {
+    // Ten hours early — exactly the old NSE-stamped bug. This must NOT be
+    // treated as a closing price, or the gate would stop catching dead feeds.
+    const early = assessFreshness({
+      observedAt: new Date(close.getTime() - 10 * 3600_000),
+      evaluatedAt: new Date(close.getTime() + 62 * 3600_000),
+      marketIsOpen: false,
+      lastSessionCloseAt: close,
+    })
+    expect(early.quality).toBe('STALE')
+  })
+})

@@ -60,6 +60,8 @@ export const api = {
 export interface MarketInfo {
   id: string; label: string; timeZone: string
   currency: string; locale: string; benchmark: string
+  /** When the exchange last closed, so the client need not own a calendar. */
+  lastCloseAt?: string | null
 }
 export type Tier = 'NORMAL' | 'WORTH_WATCHING' | 'SIGNIFICANT' | 'CRITICAL' | 'SUPPRESSED'
 export type Quality = 'FRESH' | 'DELAYED' | 'STALE' | 'UNAVAILABLE' | 'CONFLICTING' | 'SUSPECT'

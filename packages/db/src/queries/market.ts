@@ -1,8 +1,19 @@
 import { and, asc, desc, eq, gt, gte, inArray, lte, sql } from 'drizzle-orm'
 import { db } from '../index.js'
 import * as t from '../schema.js'
-import { istDate } from '@since/core'
+import { istDate, marketFor, instantAtLocalMinute } from '@since/core'
 import type { DailyBar, IntradayBar } from '@since/core'
+
+/**
+ * When a daily bar stands in for an observation, it is the close of its own
+ * session — so it must carry that exchange's close, not a literal. The exchange
+ * is inferred from the symbol, the same inference the brief uses to pick a
+ * market, because market truth here is keyed only by symbol.
+ */
+function closeOf(symbolId: string, date: string): Date {
+  const m = marketFor(symbolId.endsWith('.NS') ? 'nifty50' : 'us')
+  return instantAtLocalMinute(date, m.closeMinute, m.timeZone)
+}
 
 /**
  * Market-truth queries.
@@ -52,7 +63,7 @@ export async function priceAt(symbolId: string, at: Date): Promise<PricePoint | 
   if (!daily[0]) return null
   return {
     price: daily[0].close,
-    observedAt: new Date(`${daily[0].date}T10:00:00.000Z`),   // 15:30 IST
+    observedAt: closeOf(symbolId, daily[0].date),
     source: 'daily-close',
     granularity: 'daily',
   }
@@ -90,7 +101,7 @@ export async function pricesAt(symbolIds: readonly string[], at: Date): Promise<
     for (const r of daily) {
       out.set(r.symbol_id, {
         price: Number(r.close),
-        observedAt: new Date(`${r.date}T10:00:00.000Z`),
+        observedAt: closeOf(r.symbol_id, r.date),
         source: 'daily-close', granularity: 'daily',
       })
     }

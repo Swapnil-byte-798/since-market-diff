@@ -11,7 +11,7 @@
  */
 import { sql, db, schema } from '@since/db'
 import { desc, eq, inArray, sql as dsql } from 'drizzle-orm'
-import { detectSuspectBar, logReturn, marketFor, type DailyBar } from '@since/core'
+import { detectSuspectBar, logReturn, marketFor, instantAtLocalMinute, type DailyBar } from '@since/core'
 import { SECTORS, universeFor, type UniverseName } from './universe.js'
 import { YahooProvider } from './providers/yahoo.js'
 import { SyntheticProvider } from './providers/synthetic.js'
@@ -39,6 +39,13 @@ const CLEAN = flag('clean')
  * only on data I generated proves nothing about markets.
  */
 const UNIVERSE_NAME = opt('universe', 'nifty50') as UniverseName
+
+/**
+ * The exchange being ingested. Everything time-shaped below derives from this
+ * rather than assuming a market, which is what previously stamped US prices
+ * with the NSE close.
+ */
+const MARKET = marketFor(UNIVERSE_NAME)
 // Twelve Data's free tier allows 8 req/min, so real runs are serialised by the
 // provider's own throttle regardless of this.
 const CONCURRENCY = Number(opt('concurrency', '3'))
@@ -324,7 +331,11 @@ async function writeIntradayBars(
 async function writeLatestObservation(id: string, bars: readonly DailyBar[], source: string): Promise<void> {
   const last = bars[bars.length - 1]
   if (!last) return
-  const observedAt = new Date(`${last.date}T10:00:00.000Z`)   // 15:30 IST close
+  // The close of the session this price belongs to. Stamping it with another
+  // market's close pushes it hours away from `lastSessionCloseAt`, and the
+  // quality gate then cannot recognise a closing price as a closing price — it
+  // falls through to the wall-clock rule and every symbol goes stale overnight.
+  const observedAt = instantAtLocalMinute(last.date, MARKET.closeMinute, MARKET.timeZone)
   await db.insert(schema.observations).values({
     id: `${id}:${source}:${observedAt.toISOString()}`,
     symbolId: id, price: last.close, volume: last.volume,
@@ -407,7 +418,7 @@ async function injectFaults(
   const STALE_FEED_SYMBOL = symbolId(picks.stale)
   const CONFLICT_SYMBOL = symbolId(picks.conflict)
   const lastDate = indexBars[indexBars.length - 1]!.date
-  const sessionClose = new Date(`${lastDate}T10:00:00.000Z`)   // 15:30 IST
+  const sessionClose = instantAtLocalMinute(lastDate, MARKET.closeMinute, MARKET.timeZone)
 
   // 1. A feed that stopped days ago -> STALE -> alerts suppressed.
   //    Anchored to the dataset, so it is stale no matter when you look.
