@@ -91,6 +91,12 @@ function userIdOf(req: { cookies: Record<string, string | undefined>; unsignCook
   if (!raw) throw unauthorized('No session. POST /api/session/demo first.')
   const un = req.unsignCookie(raw)
   if (!un.valid || !un.value) throw unauthorized('Invalid session cookie.')
+  // The seeded user is a template, not an identity. Cookies naming it were
+  // handed out before sessions were cloned per visitor, they renew themselves
+  // for thirty days, and read cursors only ever move forward — so one click
+  // from one stale browser would burn a card out of every future visitor's
+  // brief, permanently and invisibly. Refuse it; the caller mints a clone.
+  if (un.value === DEMO_USER) throw unauthorized('Stale session. POST /api/session/demo first.')
   return un.value
 }
 
@@ -162,9 +168,12 @@ app.post('/api/session/demo', { config: { rateLimit: LIMITS.session } }, async (
     const un = (req as unknown as { unsignCookie: (v: string) => { valid: boolean; value: string | null } })
       .unsignCookie(raw)
     if (un.valid && un.value) {
-      const [existing] = await db.select().from(schema.users)
-        .where(eq(schema.users.id, un.value)).limit(1)
-      if (existing) userId = existing.id
+      // Never re-adopt the template — see userIdOf.
+      if (un.value !== DEMO_USER) {
+        const [existing] = await db.select().from(schema.users)
+          .where(eq(schema.users.id, un.value)).limit(1)
+        if (existing) userId = existing.id
+      }
     }
   }
 
