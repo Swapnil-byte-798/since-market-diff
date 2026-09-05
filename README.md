@@ -449,8 +449,12 @@ See [`docs/DEMO.md`](docs/DEMO.md) for the full walkthrough. The short version:
 ## What we deliberately did not build
 
 Trading. Portfolio/P&L. A chatbot. Buy/sell signals. Price prediction. Social
-feeds. Crypto. US markets. Charting. Microservices, Kafka, Kubernetes, Redis.
-Auth beyond a demo session.
+feeds. Crypto. Charting. Microservices, Kafka, Kubernetes, Redis. Auth beyond a
+demo session.
+
+(This list used to include "US markets", written when the NSE was the only
+target. It is what the product now runs on — see *Why US data* above — and
+leaving it here would have been a straight contradiction two screens apart.)
 
 Every one of those would have made the feature list longer and the product worse.
 

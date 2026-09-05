@@ -38,8 +38,16 @@ export async function benchmarkId(): Promise<string> {
   return (await activeMarket()).benchmarkId
 }
 
-/** Retained for callers that have not been threaded through yet. */
-export const BENCHMARK_ID = '^NSEI'
+/**
+ * The calendar date of an instant, in the active market's own timezone.
+ *
+ * istDate() defaults to Asia/Kolkata. Every caller that took the default was
+ * asking "which session's data may I use" and getting the answer for Mumbai,
+ * which rolls over at 18:30 IST — in the middle of the New York afternoon.
+ */
+export async function marketDate(at: Date): Promise<string> {
+  return istDate(at, (await activeMarket()).timeZone)
+}
 
 export interface BriefResult extends Brief {
   at: string
@@ -132,7 +140,7 @@ export async function evaluateBrief(params: {
     db.select().from(schema.userThresholds)
       .where(and(eq(schema.userThresholds.userId, userId), inArray(schema.userThresholds.symbolId, symbolIds))),
     q.symbolsWithSectors([...symbolIds, BENCH]),
-    q.statsFor(symbolIds, istDate(at)),
+    q.statsFor(symbolIds, await marketDate(at)),
     q.observationsFor(symbolIds, at),
   ])
 
@@ -176,7 +184,7 @@ export async function evaluateBrief(params: {
   // ~240 queries and take nine seconds; this is a fixed number regardless of
   // watchlist size.
   const barsFrom = new Date(at.getTime() - 20 * 86400_000).toISOString().slice(0, 10)
-  const barsTo = istDate(at)
+  const barsTo = await marketDate(at)
   const earliestWindow = new Date(Math.min(...[...windows.values()].map((w) => w.windowStart.getTime())))
   const [barsBySymbol, indexBarsList, actionsBySymbol, eventsBySymbol, idxSigma] = await Promise.all([
     q.dailyBarsBatch(symbolIds, barsFrom, barsTo),
@@ -220,6 +228,9 @@ export async function evaluateBrief(params: {
       sessions: w.sessions,
       sessionResiduals: bars.residuals,
       userThreshold: threshold ? { kind: threshold.kind, value: threshold.value } : undefined,
+      // Prices in explanation text belong to this exchange, not to whichever
+      // one the scoring code was first written for.
+      money: { currency: market.currency, locale: market.locale },
       hasEventInWindow: events.length > 0,
       eventHeadline: events[0]?.headline,
     }
@@ -320,11 +331,11 @@ export async function assessQuality(p: {
   priceEnd: number | null
   observedAt: Date | null
 }): Promise<QualityAssessment> {
-  const to = istDate(p.at)
+  const to = await marketDate(p.at)
   const from = new Date(p.at.getTime() - 20 * 86400_000).toISOString().slice(0, 10)
   const [bars, idx, actions] = await Promise.all([
     q.dailyBarsBetween(p.symbolId, from, to),
-    q.dailyBarsBetween(BENCHMARK_ID, from, to),
+    q.dailyBarsBetween(await benchmarkId(), from, to),
     q.corporateActionsBetween(p.symbolId, from, to),
   ])
   return assessQualitySync({
@@ -363,33 +374,45 @@ function buildRecentBars(
   }
 }
 
-let fallbackGridCache: number[] | null | undefined
+// Keyed by benchmark: a grid cached under one index must not be handed to the
+// other when the active market changes.
+let fallbackGridCache: { benchmark: string; grid: number[] | null } | null = null
 async function fallbackGrid(): Promise<number[] | null> {
-  if (fallbackGridCache !== undefined) return fallbackGridCache
-  const row = await q.latestStats(BENCHMARK_ID)
-  fallbackGridCache = row?.pctlGrid ?? null
-  return fallbackGridCache
+  const bench = await benchmarkId()
+  if (fallbackGridCache?.benchmark === bench) return fallbackGridCache.grid
+  const row = await q.latestStats(bench)
+  fallbackGridCache = { benchmark: bench, grid: row?.pctlGrid ?? null }
+  return fallbackGridCache.grid
 }
 
-let sigmaCache: { value: number | null; at: number } | null = null
+let sigmaCache: { benchmark: string; value: number | null; at: number } | null = null
 
-/** Typical benchmark move for one session. Cached; it changes once a day. */
+/**
+ * Typical benchmark move for one session. Cached; it changes once a day.
+ *
+ * This scales the market-regime test. Reading it from the NIFTY while the
+ * index return came from the S&P compared two different markets' units, so the
+ * z-score was meaningless and the regime headline could never fire — the one
+ * piece of the brief whose whole job is to say "this is the market, not your
+ * stock" was silently switched off.
+ */
 async function benchmarkSigma(sessions: number): Promise<number | null> {
-  if (sigmaCache && Date.now() - sigmaCache.at < 300_000) {
+  const bench = await benchmarkId()
+  if (sigmaCache && sigmaCache.benchmark === bench && Date.now() - sigmaCache.at < 300_000) {
     return sigmaCache.value === null ? null : sigmaCache.value * Math.sqrt(Math.max(1, sessions))
   }
   const to = new Date().toISOString().slice(0, 10)
   const from = new Date(Date.now() - 200 * 86400_000).toISOString().slice(0, 10)
-  const bars = await q.dailyBarsBetween(BENCHMARK_ID, from, to)
+  const bars = await q.dailyBarsBetween(bench, from, to)
   const rets: number[] = []
   for (let i = 1; i < bars.length; i++) {
     const r = logReturn(bars[i - 1]!.adjClose, bars[i]!.adjClose)
     if (r !== null) rets.push(r)
   }
-  if (rets.length < 30) { sigmaCache = { value: null, at: Date.now() }; return null }
+  if (rets.length < 30) { sigmaCache = { benchmark: bench, value: null, at: Date.now() }; return null }
   const s = mad(rets)
   const base = Number.isFinite(s) && s > 0 ? s : null
-  sigmaCache = { value: base, at: Date.now() }
+  sigmaCache = { benchmark: bench, value: base, at: Date.now() }
   return base === null ? null : base * Math.sqrt(Math.max(1, sessions))
 }
 

@@ -12,7 +12,7 @@ import {
   type AttentionBudget,
 } from '@since/core'
 import { investigate, type Stage } from '@since/agent'
-import { evaluateBrief, calendar, providerInfo, activeMarket, BENCHMARK_ID } from './services/brief.js'
+import { evaluateBrief, calendar, providerInfo, activeMarket, benchmarkId, marketDate } from './services/brief.js'
 import type { MarketDef } from '@since/core'
 
 /** The client needs currency and timezone to render prices and times honestly. */
@@ -399,7 +399,7 @@ app.get('/api/changes/:id', async (req) => {
   if (!change) throw notFound('Change not found')
 
   const [sym] = await db.select().from(schema.symbols).where(eq(schema.symbols.id, change.symbolId)).limit(1)
-  const stats = await q.latestStats(change.symbolId, istDate(change.windowEnd))
+  const stats = await q.latestStats(change.symbolId, await marketDate(change.windowEnd))
   const inv = await getInvestigation(change.id)
 
   return {
@@ -470,7 +470,7 @@ app.post('/api/changes/:id/investigate', { config: { rateLimit: LIMITS.investiga
     symbolName: sym?.name ?? change.symbolId,
     windowStart: change.windowStart,
     windowEnd: change.windowEnd,
-    benchmarkId: BENCHMARK_ID,
+    benchmarkId: await benchmarkId(),
     sectorName: sector?.name ?? null,
     volumeMultiple: volumeMultipleOf(change.contributions),
     hasEvent: (change.contributions ?? []).some((c) => c.key === 'event'),
@@ -570,10 +570,10 @@ app.get('/api/changes/:id/replay', async (req) => {
 
   const [bars, idxBars, events] = await Promise.all([
     q.intradayBetween(change.symbolId, change.windowStart, change.windowEnd),
-    q.intradayBetween(BENCHMARK_ID, change.windowStart, change.windowEnd),
+    q.intradayBetween(await benchmarkId(), change.windowStart, change.windowEnd),
     q.eventsBetween(change.symbolId, change.windowStart, change.windowEnd),
   ])
-  const stats = await q.latestStats(change.symbolId, istDate(change.windowEnd))
+  const stats = await q.latestStats(change.symbolId, await marketDate(change.windowEnd))
   const beta = stats?.beta ?? 1
   const sigma = stats?.residMad ?? null
   const idxByTs = new Map(idxBars.map((b) => [b.ts.getTime(), b]))
@@ -655,6 +655,10 @@ app.get('/api/data-health', async (req) => {
   const nameBy = new Map(names.map((n) => [n.id, n.name]))
 
   return {
+    // Without this the Data page has no currency and falls back to rupees, so
+    // the page whose entire subject is "we do not show you numbers we cannot
+    // stand behind" priced US equities in ₹.
+    market: marketPayload(await activeMarket()),
     ...meta, marketOpen: cal.isOpen(now), at: now.toISOString(), symbols: rows,
     quarantined: quarantined.map((x) => ({
       ...x,
@@ -797,7 +801,7 @@ app.get('/debug/why', { config: { rateLimit: LIMITS.brief } }, async (req) => {
   const brief = await evaluateBrief({ userId, at: when, budgetOverride: 'HIGH', capOverride: 50 })
   const score = brief.cards.find((c) => c.symbolId === symbol)?.score
     ?? (await evaluateBrief({ userId, at: when })).cards.find((c) => c.symbolId === symbol)?.score
-  const stats = await q.latestStats(symbol, istDate(when))
+  const stats = await q.latestStats(symbol, await marketDate(when))
 
   return {
     symbol, at: when.toISOString(),

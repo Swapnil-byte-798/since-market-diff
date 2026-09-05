@@ -109,6 +109,12 @@ export interface ScoreInput {
   /** Per-session residuals inside the window, for the persistence signal. */
   sessionResiduals?: number[] | undefined
   userThreshold?: { kind: 'ABOVE' | 'BELOW'; value: number } | undefined
+  /**
+   * How to render a price in explanation text. Supplied by the caller because
+   * core must not guess a currency: the threshold signal used to print a rupee
+   * sign and Indian digit grouping onto US prices.
+   */
+  money?: { currency: string; locale: string } | undefined
   hasEventInWindow?: boolean
   eventHeadline?: string | undefined
 }

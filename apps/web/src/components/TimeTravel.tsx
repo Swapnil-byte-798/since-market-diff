@@ -33,7 +33,9 @@ export function TimeTravel({
         }`}
       >
         {active
-          ? `Viewing ${dateIST(value)} at ${timeIST(value)} — reset to now`
+          // Rendered in the exchange's timezone like every other time on the
+          // page. Defaulting to IST put "Last close" at 01:30 on the wrong day.
+          ? `Viewing ${dateIST(value, market)} at ${timeIST(value, market)} — reset to now`
           : 'Return to an earlier moment'}
       </button>
 

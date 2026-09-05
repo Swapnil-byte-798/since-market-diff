@@ -209,11 +209,11 @@ export default function EvalPage() {
             <li>
               <span className="text-ink">These numbers come from real market data.</span>{' '}
               {r.dataset.symbols} US large caps, {r.dataset.alignedSessions} sessions via{' '}
-              {r.dataset.provider}, benchmark {r.dataset.benchmark}. The product itself watches NSE,
-              but free NSE feeds are gated behind paid plans — so the model is validated on the real
-              prices available and demonstrated on Indian equities whose prices are generated and
-              labelled <span className="font-mono text-[0.75rem]">SIMULATED</span> everywhere they
-              appear. Same harness, same scoring code, both ways.
+              {r.dataset.provider}, benchmark {r.dataset.benchmark} — the same data the product
+              itself runs on, through the same scoring code. A Groww-shaped watchlist belongs on
+              Indian equities and the engine reads its exchange from the data, but every free NSE
+              feed is gated or IP-blocked, so demonstrating on real prices from another exchange
+              was the honest option. What this does not measure is Indian market microstructure.
             </li>
           )}
           {r.companion ? (

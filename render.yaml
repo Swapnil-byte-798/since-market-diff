@@ -43,6 +43,12 @@ services:
       # Free Postgres allows few connections; two processes share them.
       - key: DB_POOL_MAX
         value: "5"
+      # Session cookies are signed with this. Left unset, the code falls back to
+      # a default committed to a public repository, and anyone could forge a
+      # session — including the template user every visitor is cloned from.
+      # generateValue makes Render mint a random one per service.
+      - key: COOKIE_SECRET
+        generateValue: true
       # Optional: enables the investigation agent. Without it the deterministic
       # engine explains changes, which is the default path rather than a
       # degraded one. Set this in the Render dashboard, not in this file.

@@ -131,7 +131,7 @@ export function computeSignals(
         z: 1,
         weight: weights.userThreshold,
         points: weights.userThreshold,
-        detail: `Crossed ${kind === 'BELOW' ? 'below' : 'above'} ₹${value.toLocaleString('en-IN')}`,
+        detail: `Crossed ${kind === 'BELOW' ? 'below' : 'above'} ${formatMoney(value, input.money)}`,
       })
     }
   }
@@ -153,6 +153,7 @@ export function computeSignals(
   //    of it would not.
   if (input.sessions > 1 && input.sessionResiduals && input.stats?.residMad) {
     const sigma = input.stats.residMad
+    const examined = input.sessionResiduals.length
     const notable = input.sessionResiduals.filter((r) => Math.abs(r) > sigma).length
     if (notable >= 2) {
       const z = clip(notable, 0, Z_CLIP)
@@ -162,10 +163,30 @@ export function computeSignals(
         z,
         weight: weights.cumulative,
         points: z * weights.cumulative,
-        detail: `${notable} of the last ${input.sessions} sessions moved against the market`,
+        // Denominator is what was actually examined. It used to be the window's
+        // session count while the numerator counted residuals from a longer
+        // trailing slice, which printed impossibilities like "4 of the last 2".
+        detail: `${notable} of the last ${examined} sessions moved against the market`,
       })
     }
   }
 
   return out
+}
+
+/**
+ * Render a price for explanation text.
+ *
+ * Falls back to a bare number rather than inventing a symbol: a wrong currency
+ * is a factual error in a sentence the product asks the reader to trust.
+ */
+function formatMoney(value: number, m: { currency: string; locale: string } | undefined): string {
+  if (!m) return value.toLocaleString('en-US')
+  try {
+    return new Intl.NumberFormat(m.locale, {
+      style: 'currency', currency: m.currency, maximumFractionDigits: 2,
+    }).format(value)
+  } catch {
+    return value.toLocaleString(m.locale)
+  }
 }
