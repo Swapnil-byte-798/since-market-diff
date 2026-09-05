@@ -15,3 +15,5 @@ coverage/
 # Database snapshot used to seed a deployment (regenerate with npm run db:snapshot)
 .snapshot.sql
 .ingest-us.log
+.neon-api.log
+.dev.log

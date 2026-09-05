@@ -16,7 +16,12 @@ services:
     name: since
     runtime: node
     plan: free            # Sleeps after 15 minutes idle; first request ~50s.
-    region: singapore     # Closest to an Indian audience.
+    # MUST match the Neon project's region. The brief issues tens of sequential
+    # queries; at 245 ms per cross-continent round trip (Singapore -> Ohio,
+    # measured) that alone made it take 8.7s instead of 0.6s. Co-located, the
+    # round trip is a couple of milliseconds and the distance from the user
+    # costs one round trip for the page, not thirty-five.
+    region: ohio          # Neon project is in us-east-2.
     buildCommand: npm install && npm run build && npm run deploy:seed
     startCommand: npm start
     # Cheap and precise: it touches the database, so a green check means the

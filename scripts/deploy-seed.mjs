@@ -26,18 +26,40 @@ if (!process.env.DATABASE_URL) {
   process.exit(1)
 }
 
-console.log('  applying schema…')
-run('npm run -w @since/db push -- --force')
+const { db, schema, sql: raw } = await import('@since/db')
 
-const { db, schema } = await import('@since/db')
-const rows = await db.select({ id: schema.dailyBars.symbolId }).from(schema.dailyBars).limit(1)
+/**
+ * Look before applying anything.
+ *
+ * The schema used to be pushed unconditionally, first. That is wrong in both
+ * directions. `drizzle-kit push --force` accepts data-loss statements, so
+ * running it against a database that already holds a restored snapshot risks
+ * destroying it on every deploy — and it fails outright against Postgres 18
+ * (Neon's default), where drizzle-kit misreads an existing primary key and
+ * tries to alter it: `column "user_id" is in a primary key`. The build died
+ * before reaching the check that would have said there was nothing to do.
+ *
+ * A restored snapshot carries its own schema, so the push is only needed for a
+ * genuinely empty database — where it is pure CREATE and has nothing to break.
+ */
+const [{ present }] = await raw`
+  SELECT count(*)::int AS present
+  FROM information_schema.tables
+  WHERE table_schema = 'public' AND table_name = 'daily_bars'`
 
-if (rows.length > 0) {
-  console.log('  database already has market data — leaving it alone.')
-  process.exit(0)
+if (present > 0) {
+  const rows = await db.select({ id: schema.dailyBars.symbolId }).from(schema.dailyBars).limit(1)
+  if (rows.length > 0) {
+    console.log('  database already has schema and market data — leaving it alone.')
+    process.exit(0)
+  }
+  console.log('  schema present but no market data: seeding…')
+} else {
+  console.log('  empty database: applying schema…')
+  run('npm run -w @since/db push -- --force')
 }
 
-console.log('  empty database: seeding the demo dataset…')
+console.log('  seeding the demo dataset…')
 run('npm run -w @since/ingest start -- --provider synthetic')
 run('npm run -w @since/eval start')
 console.log('  seed complete.')

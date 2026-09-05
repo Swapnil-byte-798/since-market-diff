@@ -15,17 +15,44 @@ as a laptop and there is no second public surface to secure.
 ## 1. Database (Neon)
 
 1. Create a project at <https://neon.tech> (free tier, no card).
-2. Copy the **pooled** connection string. It looks like:
+2. Note the **region** you create it in, and set `region:` in `render.yaml` to
+   the matching Render region. This is not a detail: the brief issues tens of
+   sequential queries, so a cross-continent pair costs ~245 ms *each* and turns
+   a 0.6s page into 8.7s. Co-located, the round trip is a couple of ms.
+
+   | Neon region | Render `region:` |
+   |---|---|
+   | `us-east-2` (Ohio) | `ohio` |
+   | `ap-southeast-1` (Singapore) | `singapore` |
+   | `eu-central-1` (Frankfurt) | `frankfurt` |
+   | `us-west-2` (Oregon) | `oregon` |
+
+3. Copy the **pooled** connection string. It looks like:
    `postgresql://USER:PASS@ep-xxx-pooler.REGION.aws.neon.tech/neondb?sslmode=require`
    The pooled endpoint matters: the free tier allows few direct connections and
    this app runs two processes.
 
-Load the real market dataset into it from this laptop:
+Load the real market dataset into it from this laptop. Put the connection
+string in `.env` as `NEON_DATABASE_URL` rather than passing it as an argument —
+an argument lands in shell history and in the process list.
 
 ```bash
 npm run db:snapshot dump
-npm run db:snapshot restore "postgresql://…?sslmode=require"
+npm run db:snapshot restore
 ```
+
+The restore deliberately loads through the **direct** (non-pooler) endpoint even
+though you paste the pooled one. `pg_dump`'s preamble sets an empty
+`search_path` session-wide; through a transaction pooler that setting outlives
+the restore and strands later connections, so every unqualified query reports
+`relation "daily_bars" does not exist` while the tables sit there perfectly
+intact. The restore then pins `search_path` on the database and verifies through
+the pooled endpoint before reporting success.
+
+Note that Neon runs **PostgreSQL 18** while local development runs 16. The
+snapshot loads fine across that gap, but `drizzle-kit push` misreads an existing
+primary key on 18 — which is why `deploy:seed` now inspects the database and
+only pushes when it is genuinely empty.
 
 `dump` writes `.snapshot.sql` (gitignored) from the local container; `restore`
 pipes it to Neon through the container's `psql`, so no local Postgres client is
