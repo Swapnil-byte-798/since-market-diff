@@ -20,6 +20,7 @@
  * gitignored.
  */
 import { execFileSync, spawnSync } from 'node:child_process'
+import { resolve4 } from 'node:dns/promises'
 import { statSync, existsSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 
@@ -97,34 +98,72 @@ if (mode === 'restore') {
   const sql = readFileSync(FILE)
 
   /**
-   * Load through the DIRECT endpoint, never the pooler.
+   * Neutralise the one line that poisons a pooled connection.
    *
-   * pg_dump's preamble contains `set_config('search_path', '', false)` — the
-   * `false` makes it session-wide rather than transaction-local. Sent through a
-   * transaction pooler that reuses server connections between clients, the empty
-   * search_path outlives the restore and strands every later connection that
-   * inherits it: the tables are all present and correct, and every unqualified
-   * query says `relation "daily_bars" does not exist`. A bulk load has no
-   * business going through a transaction pooler in any case.
+   * pg_dump's preamble runs set_config('search_path', '', false) — session-wide
+   * rather than transaction-local. Through a transaction pooler that reuses
+   * server connections between clients, that empty search_path outlives the
+   * restore and strands every later connection: all the tables present and
+   * correct, and every unqualified query reporting that daily_bars does not
+   * exist. Every object in the dump is schema-qualified, so removing it changes
+   * nothing about what gets created.
+   *
+   * Loading through the direct endpoint would avoid this too, but that hostname
+   * resolves unreliably from here — sometimes EAI_AGAIN, sometimes AAAA-only
+   * records the container cannot route — whereas the pooled host, which the
+   * application uses anyway, has been dependable.
    */
-  const loadUrl = target.replace(/-pooler\./, '.')
-  if (loadUrl !== target) console.log('  using the direct endpoint for the load (not the pooler)')
+  const cleaned = Buffer.from(
+    sql.toString('utf8').replace(
+      /^SELECT pg_catalog\.set_config\('search_path', '', false\);$/m,
+      '-- search_path set_config removed: it leaks across a transaction pooler.',
+    ),
+    'utf8',
+  )
 
-  const shown = loadUrl.replace(/:[^:@/]+@/, ':****@')
-  console.log(`  restoring ${(sql.length / 1e6).toFixed(1)} MB -> ${shown}`)
-  const res = spawnSync('docker', ['exec', '-i', CONTAINER, 'psql', loadUrl, '-v', 'ON_ERROR_STOP=1', '-q'],
-    { input: sql, stdio: ['pipe', 'inherit', 'inherit'], maxBuffer: 1 << 30 })
-  if (res.status !== 0) process.exit(res.status ?? 1)
+  const shown = target.replace(/:[^:@/]+@/, ':****@')
+  console.log(`  restoring ${(cleaned.length / 1e6).toFixed(1)} MB -> ${shown}`)
 
   /**
-   * Pin search_path on the database itself.
+   * Resolve on the host and pin the address.
    *
-   * Neon's pooler rejects `search_path` as a startup parameter outright, so a
-   * client cannot ask for it at connect time. Setting it on the database means
-   * every new connection gets it without the application having to know.
+   * Neon publishes both A and AAAA records. The container's resolver returns
+   * only the v6 ones and has no route for them, so psql fails with "Name has no
+   * usable address" — which reads like the database is unreachable when it is
+   * merely unreachable over IPv6. `hostaddr` supplies the address; `host` stays
+   * in the URL, so TLS still verifies against the hostname.
    */
+  let loadUrl = target
+  try {
+    const u = new URL(target)
+    const [ipv4] = await resolve4(u.hostname)
+    if (!ipv4) throw new Error('no A record')
+    u.searchParams.set('hostaddr', ipv4)
+    loadUrl = u.toString()
+    console.log(`  pinned to IPv4 ${ipv4} (the container has no IPv6 route)`)
+  } catch (err) {
+    console.log(`  ! could not pre-resolve IPv4 (${err.message}); letting psql try its own lookup`)
+  }
+
+  let res
+  for (let attempt = 1; attempt <= 4; attempt++) {
+    res = spawnSync('docker', ['exec', '-i', CONTAINER, 'psql', loadUrl, '-v', 'ON_ERROR_STOP=1', '-q'],
+      { input: cleaned, stdio: ['pipe', 'inherit', 'pipe'], maxBuffer: 1 << 30, encoding: 'buffer' })
+    const err = String(res.stderr ?? '')
+    if (res.status === 0) break
+    // Transient name-resolution failures only; anything else is real.
+    if (!/could not translate host name|Try again|Temporary failure|Address not available/.test(err)) {
+      process.stderr.write(err)
+      process.exit(res.status ?? 1)
+    }
+    if (attempt === 4) { process.stderr.write(err); process.exit(res.status ?? 1) }
+    console.log(`  name lookup failed (attempt ${attempt}/4) — retrying`)
+    const until = Date.now() + attempt * 4000
+    while (Date.now() < until) { /* backoff */ }
+  }
+
   const dbName = (() => {
-    try { return new URL(loadUrl).pathname.replace(/^\//, '') || 'neondb' }
+    try { return new URL(target).pathname.replace(/^\//, '') || 'neondb' }
     catch { return 'neondb' }
   })()
   const alter = spawnSync('docker',

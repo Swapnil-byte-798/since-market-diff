@@ -26,7 +26,7 @@ export default function HealthPage() {
    * majority, and each state carries a word and a mark as well as position, so
    * none of it depends on colour.
    */
-  const ORDER: Provenance[] = ['UNAVAILABLE', 'CONFLICTING', 'SUSPECT', 'STALE', 'DELAYED', 'SIMULATED', 'NSE', 'REPLAY']
+  const ORDER: Provenance[] = ['UNAVAILABLE', 'CONFLICTING', 'SUSPECT', 'STALE', 'DELAYED', 'SIMULATED', 'LIVE', 'REPLAY']
   const byState = new Map<string, typeof data.symbols>()
   for (const s of data.symbols) {
     const k = s.provenance ?? 'UNAVAILABLE'

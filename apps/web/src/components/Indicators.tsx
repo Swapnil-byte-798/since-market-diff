@@ -1,7 +1,7 @@
 import type { Tier } from '@/lib/api'
 
 export type Provenance =
-  | 'NSE' | 'SIMULATED' | 'REPLAY' | 'DELAYED'
+  | 'LIVE' | 'SIMULATED' | 'REPLAY' | 'DELAYED'
   | 'STALE' | 'UNAVAILABLE' | 'CONFLICTING' | 'SUSPECT'
 
 /**
@@ -12,7 +12,7 @@ export type Provenance =
  * freshness are different questions and are answered separately.
  */
 const PROVENANCE_COPY: Record<Provenance, { label: string; tone: string; mark: string; title: string }> = {
-  NSE: { label: 'NSE', tone: 'text-ink-faint', mark: '●', title: 'Live NSE market data' },
+  LIVE: { label: 'Live', tone: 'text-ink-faint', mark: '●', title: 'Live market data' },
   SIMULATED: { label: 'Simulated', tone: 'text-ink-muted', mark: '◆', title: 'Deterministic generated data — not real market activity' },
   REPLAY: { label: 'Replay', tone: 'text-ink-muted', mark: '◷', title: 'A past moment, re-evaluated through the same engine' },
   DELAYED: { label: 'Delayed', tone: 'text-ink-muted', mark: '◐', title: 'Real and current, but behind' },
@@ -24,12 +24,19 @@ const PROVENANCE_COPY: Record<Provenance, { label: string; tone: string; mark: s
 
 /** Never colour alone: every state carries a mark and a word. */
 export function ProvenanceBadge({
-  provenance, reason,
+  provenance, reason, exchange,
 }: {
   provenance: Provenance | undefined
   reason?: string
+  /** Exchange label, when the caller knows it. Naming the venue is better than
+   *  a bare "Live", but the venue is data — hardcoding one put "Live NSE market
+   *  data" under Tesla the moment US prices started passing the freshness gate. */
+  exchange?: string
 }) {
-  const c = PROVENANCE_COPY[provenance ?? 'UNAVAILABLE']
+  const base = PROVENANCE_COPY[provenance ?? 'UNAVAILABLE']
+  const c = provenance === 'LIVE' && exchange
+    ? { ...base, label: exchange, title: `Live ${exchange} market data` }
+    : base
   return (
     <span className={`inline-flex items-center gap-1.5 text-[0.7rem] ${c.tone}`} title={reason ?? c.title}>
       <span aria-hidden>{c.mark}</span>

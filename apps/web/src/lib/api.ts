@@ -66,7 +66,7 @@ export interface MarketInfo {
 export type Tier = 'NORMAL' | 'WORTH_WATCHING' | 'SIGNIFICANT' | 'CRITICAL' | 'SUPPRESSED'
 export type Quality = 'FRESH' | 'DELAYED' | 'STALE' | 'UNAVAILABLE' | 'CONFLICTING' | 'SUSPECT'
 export type Provenance =
-  | 'NSE' | 'SIMULATED' | 'REPLAY' | 'DELAYED'
+  | 'LIVE' | 'SIMULATED' | 'REPLAY' | 'DELAYED'
   | 'STALE' | 'UNAVAILABLE' | 'CONFLICTING' | 'SUSPECT'
 
 export interface Contribution {

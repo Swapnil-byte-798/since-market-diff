@@ -180,7 +180,7 @@ function ChangeRow({ card, brief, index }: { card: Card; brief: Brief; index: nu
             <Delta value={s.returnPct} />
           </div>
           <div className="mt-2 flex justify-end">
-            <ProvenanceBadge provenance={card.provenance} reason={s.qualityReason} />
+            <ProvenanceBadge provenance={card.provenance} reason={s.qualityReason} exchange={brief.market?.label} />
           </div>
         </div>
       </header>
@@ -298,7 +298,7 @@ function Withheld({ brief }: { brief: Brief }) {
         {brief.suppressed.map((s) => (
           <li key={s.symbolId} className="flex flex-wrap items-baseline gap-x-3 text-[0.82rem]">
             <span className="text-ink">{brief.symbolNames[s.symbolId] ?? s.symbolId}</span>
-            <ProvenanceBadge provenance={s.provenance} />
+            <ProvenanceBadge provenance={s.provenance} exchange={brief.market?.label} />
             <span className="text-ink-faint">{s.reason}</span>
           </li>
         ))}

@@ -10,7 +10,7 @@ import type { DataQuality } from '../types.js'
  * the real world, a simulation, or a historical instant being replayed?
  */
 export type Provenance =
-  | 'NSE'          // real exchange data, current
+  | 'LIVE'         // real exchange data, current
   | 'SIMULATED'    // deterministic generated data
   | 'REPLAY'       // real data, but a past moment being re-evaluated
   | 'DELAYED'      // real and current, but behind
@@ -20,7 +20,7 @@ export type Provenance =
   | 'SUSPECT'      // failed a sanity check
 
 export const PROVENANCE_LABEL: Record<Provenance, string> = {
-  NSE: 'NSE',
+  LIVE: 'Live',
   SIMULATED: 'Simulated',
   REPLAY: 'Replay',
   DELAYED: 'Delayed',
@@ -52,7 +52,7 @@ export function provenanceOf(params: {
   // Trust is intact — now say what the value actually is.
   if (simulated) return 'SIMULATED'
   if (replay) return 'REPLAY'
-  return quality === 'DELAYED' ? 'DELAYED' : 'NSE'
+  return quality === 'DELAYED' ? 'DELAYED' : 'LIVE'
 }
 
 /** True when the state means "do not act on this". */
