@@ -1,4 +1,4 @@
-import { and, eq, inArray } from 'drizzle-orm'
+import { and, asc, eq, inArray } from 'drizzle-orm'
 import { db, schema, marketQueries as q } from '@since/db'
 import {
   TradingCalendar, resolveWindow, scoreChange, composeBrief, marketFor, type MarketDef,
@@ -24,9 +24,16 @@ export async function activeMarket(): Promise<MarketDef> {
   if (marketCache && Date.now() - marketCache.at < MARKET_TTL_MS) return marketCache.market
   const rows = await db.select({ id: schema.symbols.id }).from(schema.symbols)
     .where(eq(schema.symbols.id, '__meta__:us')).limit(1)
-  // Both universes can coexist; the one with a seeded demo watchlist wins.
+  // Both universes can coexist; the seeded template decides, not whatever row
+  // the planner happened to return first. Reading any user's watchlist let a
+  // single visitor adding one foreign symbol flip the market for the whole
+  // deployment — benchmark, currency, session clock and all.
   const [item] = await db.select({ symbolId: schema.watchlistItems.symbolId })
-    .from(schema.watchlistItems).limit(1)
+    .from(schema.watchlistItems)
+    .innerJoin(schema.watchlists, eq(schema.watchlists.id, schema.watchlistItems.watchlistId))
+    .where(eq(schema.watchlists.userId, 'user_demo'))
+    .orderBy(asc(schema.watchlistItems.position))
+    .limit(1)
   const id = item ? (item.symbolId.endsWith('.NS') ? 'nifty50' : 'us') : (rows[0] ? 'us' : 'nifty50')
   const market = marketFor(id)
   marketCache = { market, at: Date.now() }
