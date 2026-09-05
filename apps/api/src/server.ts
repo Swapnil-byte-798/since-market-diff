@@ -641,6 +641,10 @@ app.get('/api/data-health', async (req) => {
   }
   // Bars excluded from every statistic. This is the integrity work the system
   // does silently at ingest; showing it is the only way anyone knows it happened.
+  //
+  // Scoped to the watchlist. Both universes can share a database, and an
+  // unscoped query put an Indian steel company's stock split on the integrity
+  // panel of a US large-cap watchlist — real evidence, of the wrong market.
   const quarantined = await db.select({
     symbolId: schema.dataQuarantine.symbolId,
     date: schema.dataQuarantine.date,
@@ -648,6 +652,7 @@ app.get('/api/data-health', async (req) => {
     impliedRatio: schema.dataQuarantine.impliedRatio,
     apparentMovePct: schema.dataQuarantine.apparentMovePct,
   }).from(schema.dataQuarantine)
+    .where(inArray(schema.dataQuarantine.symbolId, ids))
     .orderBy(dsql`${schema.dataQuarantine.date} desc`)
     .limit(20)
 
