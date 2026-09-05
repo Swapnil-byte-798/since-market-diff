@@ -21,7 +21,7 @@ services:
     # measured) that alone made it take 8.7s instead of 0.6s. Co-located, the
     # round trip is a couple of milliseconds and the distance from the user
     # costs one round trip for the page, not thirty-five.
-    region: ohio          # Neon project is in us-east-2.
+    region: singapore     # Neon project is in ap-southeast-1.
     buildCommand: npm install && npm run build && npm run deploy:seed
     startCommand: npm start
     # Cheap and precise: it touches the database, so a green check means the
