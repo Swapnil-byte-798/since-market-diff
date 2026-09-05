@@ -32,6 +32,11 @@ pipes it to Neon through the container's `psql`, so no local Postgres client is
 needed. It refuses a localhost target so a mispasted URL cannot overwrite the
 source.
 
+**Do this before the first Render deploy.** If the service boots against an
+empty database it seeds itself with synthetic data, and the seed step then sees
+rows and leaves them alone forever after. Recoverable — the restore drops and
+replaces — but it means a deploy that says `SIMULATED` until you notice.
+
 ## 2. Web service (Render)
 
 1. <https://render.com> → **New** → **Blueprint** → point it at this repository.
