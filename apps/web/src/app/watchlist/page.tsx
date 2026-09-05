@@ -68,7 +68,7 @@ function AddSymbol({ onAdded, existing }: { onAdded: () => void; existing: Set<s
 
   return (
     <div className="mt-8">
-      <label htmlFor="sym" className="eyebrow">Add a stock</label>
+      <label htmlFor="sym" className="section-label">Add a stock</label>
       <input
         id="sym" value={q} onChange={(e) => setQ(e.target.value)}
         placeholder="HDFCBANK, Infosys…" autoComplete="off"
@@ -106,62 +106,83 @@ function Row({ item, onChanged }: { item: WatchlistItem; onChanged: () => void }
   const [kind, setKind] = useState<'ABOVE' | 'BELOW'>(item.threshold?.kind ?? 'BELOW')
 
   return (
-    <li className="border-t border-ink-hairline py-4">
-      <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1">
+    /*
+     * Row actions are present for keyboard and screen readers at all times, but
+     * only become visually prominent on hover or focus. Repeating four controls
+     * down thirty rows turned a list into a wall of buttons; hiding them from
+     * assistive technology would have been the wrong way to fix that.
+     */
+    <li className="group border-t border-ink-hairline py-3.5 transition-colors focus-within:bg-paper-sunk/50 hover:bg-paper-sunk/50">
+      <div className="flex items-baseline justify-between gap-4">
         <div className="min-w-0">
-          <div className="text-[0.95rem] text-ink">{item.name}</div>
+          <div className="truncate text-[0.95rem] text-ink">{item.name}</div>
           <div className="mt-0.5 text-[0.72rem] text-ink-faint">
-            {item.ticker} · you last viewed this {ago(item.lastSeenAt)}
+            {item.ticker} · viewed {ago(item.lastSeenAt)}
           </div>
         </div>
-        <div className="text-right">
+        <div className="shrink-0 text-right">
           <div className="tnum text-[0.95rem] text-ink">{rupees(item.price)}</div>
-          <div className="mt-0.5 flex items-center justify-end gap-2 text-[0.7rem] text-ink-faint">
+          <div className="mt-0.5 flex justify-end">
             <ProvenanceBadge provenance={item.provenance} />
-            <span>{ago(item.observedAt)}</span>
           </div>
         </div>
       </div>
 
-      <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-2 text-[0.75rem]">
-        {item.threshold ? (
-          <span className="text-ink-muted">
-            Alert {item.threshold.kind === 'BELOW' ? 'below' : 'above'}{' '}
-            <span className="tnum text-ink">{rupees(item.threshold.value)}</span>
-          </span>
-        ) : (
-          <span className="text-ink-faint">No threshold</span>
-        )}
-        <button onClick={() => setEditing((e) => !e)} className="text-ink-muted underline decoration-ink-hairline underline-offset-4 hover:text-ink">
-          {editing ? 'Cancel' : item.threshold ? 'Change' : 'Set threshold'}
-        </button>
-        <button
-          onClick={async () => { await api.removeSymbol(item.symbolId); onChanged() }}
-          className="text-ink-faint underline decoration-ink-hairline underline-offset-4 hover:text-signal"
-        >
-          Remove
-        </button>
+      <div className="mt-2 flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+        <span className="text-[0.75rem]">
+          {item.threshold ? (
+            <span className="text-ink-muted">
+              <span aria-hidden>◦ </span>Alert {item.threshold.kind === 'BELOW' ? 'below' : 'above'}{' '}
+              <span className="tnum text-ink">{rupees(item.threshold.value)}</span>
+            </span>
+          ) : (
+            <span className="text-ink-faint">No threshold set</span>
+          )}
+        </span>
+
+        <span className="flex items-center gap-3 text-[0.75rem] opacity-0 transition-opacity focus-within:opacity-100 group-focus-within:opacity-100 group-hover:opacity-100">
+          <button
+            onClick={() => setEditing((e) => !e)}
+            className="tap text-ink-muted underline decoration-ink-hairline underline-offset-4 hover:text-ink"
+          >
+            {editing ? 'Cancel' : item.threshold ? 'Change' : 'Set threshold'}
+          </button>
+          <button
+            onClick={async () => { await api.removeSymbol(item.symbolId); onChanged() }}
+            className="tap text-ink-faint underline decoration-ink-hairline underline-offset-4 hover:text-signal"
+          >
+            Remove
+          </button>
+        </span>
       </div>
 
       {editing ? (
         <div className="mt-3 flex flex-wrap items-center gap-2">
-          <select value={kind} onChange={(e) => setKind(e.target.value as 'ABOVE' | 'BELOW')}
-            className="border border-ink-hairline bg-paper-raised px-2 py-1 text-[0.78rem]">
+          <label className="sr-only" htmlFor={`kind-${item.symbolId}`}>Threshold direction</label>
+          <select
+            id={`kind-${item.symbolId}`}
+            value={kind}
+            onChange={(e) => setKind(e.target.value as 'ABOVE' | 'BELOW')}
+            className="border border-ink-hairline bg-paper-raised px-2 py-1.5 text-[0.78rem]"
+          >
             <option value="BELOW">Below</option>
             <option value="ABOVE">Above</option>
           </select>
+          <label className="sr-only" htmlFor={`value-${item.symbolId}`}>Threshold price</label>
           <input
-            type="number" inputMode="decimal" value={value} onChange={(e) => setValue(e.target.value)}
-            placeholder="1400"
-            className="w-28 border border-ink-hairline bg-paper-raised px-2 py-1 text-[0.78rem] tnum"
+            id={`value-${item.symbolId}`}
+            type="number" inputMode="decimal" value={value}
+            onChange={(e) => setValue(e.target.value)} placeholder="1400"
+            className="tnum w-28 border border-ink-hairline bg-paper-raised px-2 py-1.5 text-[0.78rem]"
           />
           <button
             onClick={async () => {
               const v = Number(value)
-              await api.setThreshold(item.symbolId, Number.isFinite(v) && v > 0 ? kind : null, Number.isFinite(v) && v > 0 ? v : null)
+              const ok = Number.isFinite(v) && v > 0
+              await api.setThreshold(item.symbolId, ok ? kind : null, ok ? v : null)
               setEditing(false); onChanged()
             }}
-            className="border border-ink px-3 py-1 text-[0.78rem] hover:bg-ink hover:text-paper"
+            className="border border-ink px-3 py-1.5 text-[0.78rem] hover:bg-ink hover:text-paper"
           >
             Save
           </button>

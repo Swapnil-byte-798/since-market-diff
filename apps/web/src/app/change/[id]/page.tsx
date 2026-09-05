@@ -54,7 +54,7 @@ export default function ChangePage() {
   return (
     <div>
       <div className="pt-10">
-        <Link href="/" className="text-[0.75rem] text-ink-faint hover:text-ink">← Brief</Link>
+        <Link href="/" className="tap text-[0.75rem] text-ink-faint hover:text-ink">← Brief</Link>
       </div>
 
       <header className="mt-6">
@@ -72,8 +72,8 @@ export default function ChangePage() {
       </header>
 
       {/* ---------------------------------------------------------- why -- */}
-      <section className="mt-12 border-t border-ink-hairline pt-8" aria-labelledby="why">
-        <h2 id="why" className="eyebrow">Why this got your attention</h2>
+      <section className="section" aria-labelledby="why">
+        <h2 id="why" className="section-label">Why this got your attention</h2>
 
         <div className="mt-5">
           <AttentionScore pctl={c.pctl} frequency={detail.frequency} scoreText={detail.scoreText} />
@@ -138,6 +138,8 @@ export default function ChangePage() {
       {/* ------------------------------------------------- investigation -- */}
       <Investigation
         changeId={id}
+        subject={name}
+        movePct={c.returnPct}
         initial={inv}
         onStart={async () => { await api.investigate(id) }}
         poll={() => api.investigation(id)}
@@ -186,7 +188,7 @@ function Item({ label, value }: { label: string; value: string }) {
 function Feedback({ changeId }: { changeId: string }) {
   const [sent, setSent] = useState<string | null>(null)
   return (
-    <section className="mt-12 border-t border-ink-hairline pt-6">
+    <section className="section-tight">
       {sent ? (
         <p className="text-[0.8rem] text-ink-muted">Recorded — thank you.</p>
       ) : (

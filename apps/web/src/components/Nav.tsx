@@ -25,7 +25,7 @@ export function Nav() {
                 key={l.href}
                 href={l.href}
                 aria-current={active ? 'page' : undefined}
-                className={`text-[0.8rem] transition-colors ${
+                className={`tap text-[0.8rem] transition-colors ${
                   active ? 'text-ink' : 'text-ink-faint hover:text-ink-muted'
                 }`}
               >

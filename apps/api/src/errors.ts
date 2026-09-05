@@ -57,6 +57,20 @@ export function send(reply: FastifyReply, err: unknown): FastifyReply {
     } satisfies ApiError)
   }
 
-  const message = err instanceof Error ? err.message : 'Unexpected error'
-  return reply.status(500).send({ error: { code: 'INTERNAL', message } } satisfies ApiError)
+  // Driver errors often carry an empty message and a code instead, which
+  // rendered as {"code":"INTERNAL","message":""} — true, and useless to whoever
+  // has to fix it. Fall back to the code, and name the likely cause.
+  const raw = err as { message?: string; code?: string }
+  const dbDown = raw?.code === 'ECONNREFUSED' || /ECONNREFUSED|ENOTFOUND/.test(String(raw?.code ?? ''))
+  const message =
+    (err instanceof Error && err.message) ||
+    (raw?.code ? `Internal error (${raw.code})` : '') ||
+    'Unexpected error'
+
+  return reply.status(500).send({
+    error: {
+      code: dbDown ? 'DATABASE_UNAVAILABLE' : 'INTERNAL',
+      message: dbDown ? 'The database is not reachable. Is it running? `npm run db:up`' : message,
+    },
+  } satisfies ApiError)
 }

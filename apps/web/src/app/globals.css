@@ -24,6 +24,52 @@
     @apply text-[0.6875rem] font-medium uppercase tracking-[0.14em] text-ink-faint;
   }
   .rule { @apply border-t border-ink-hairline; }
+
+  /* A section label. Quieter than a heading, louder than body. */
+  .section-label {
+    @apply text-[0.6875rem] font-medium uppercase tracking-[0.14em] text-ink-faint;
+  }
+
+  /*
+   * Consistent vertical rhythm.
+   *
+   * Sections previously each chose their own top margin, which made the page
+   * drift. One class, one value, so the eye can predict where the next block
+   * starts.
+   */
+  .section { @apply mt-12 border-t border-ink-hairline pt-7; }
+  .section-tight { @apply mt-8 border-t border-ink-hairline pt-6; }
+
+  /*
+   * A figure and its label. Numbers are tabular so columns align, and the label
+   * sits beneath rather than beside so the digits are what the eye lands on.
+   */
+  .figure { @apply tnum font-serif leading-none text-ink; }
+
+  /*
+   * Comfortable touch target for inline text controls.
+   *
+   * Links and text buttons measured 14-19px tall on a phone, well under the 44px
+   * guideline. Padding them would have changed the editorial line spacing this
+   * design depends on, so the hit area is expanded with a pseudo-element on
+   * coarse pointers only: nothing moves, nothing looks different, and a thumb
+   * can land on it.
+   */
+  .tap { @apply relative; }
+
+  /* Ledger row: label left, value right, aligned on a shared baseline. */
+  .ledger {
+    @apply flex items-baseline justify-between gap-4 border-b border-ink-hairline/70 py-2;
+  }
+  .ledger:last-child { @apply border-b-0; }
+}
+
+@media (pointer: coarse) {
+  .tap::after {
+    content: '';
+    position: absolute;
+    inset: -13px -10px;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

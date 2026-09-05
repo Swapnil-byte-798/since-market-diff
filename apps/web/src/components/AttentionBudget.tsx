@@ -32,7 +32,7 @@ export function AttentionBudget({ current, onChange }: { current: string; onChan
         <button
           onClick={() => setOpen((o) => !o)}
           aria-expanded={open}
-          className="text-[0.78rem] text-ink-muted underline decoration-ink-hairline underline-offset-4 hover:text-ink"
+          className="tap text-[0.78rem] text-ink-muted underline decoration-ink-hairline underline-offset-4 hover:text-ink"
         >
           {open ? 'Close' : `Currently: ${active?.title ?? current}`}
         </button>

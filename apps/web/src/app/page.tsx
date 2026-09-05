@@ -7,6 +7,7 @@ import { AttentionScore, Delta, ProvenanceBadge, TierLabel } from '@/components/
 import { Skeleton, ErrorState, EmptyState, SimulatedBanner } from '@/components/States'
 import { timeIST, dateIST } from '@/components/format'
 import { TimeTravel } from '@/components/TimeTravel'
+import { Funnel } from '@/components/Funnel'
 import { AttentionBudget } from '@/components/AttentionBudget'
 
 export default function BriefPage() {
@@ -37,6 +38,7 @@ export default function BriefPage() {
   return (
     <div className={loading ? 'opacity-60 transition-opacity' : 'transition-opacity'}>
       <Hero brief={brief} />
+      <Funnel brief={brief} />
 
       <TimeTravel
         value={at}
@@ -47,9 +49,9 @@ export default function BriefPage() {
       {brief.simulated ? <SimulatedBanner provider={brief.provider} /> : null}
 
       {brief.cards.length > 0 ? (
-        <section className="mt-12" aria-labelledby="attention-heading">
+        <section className="section" aria-labelledby="attention-heading">
           <div className="flex items-baseline justify-between">
-            <h2 id="attention-heading" className="eyebrow">Deserves your attention</h2>
+            <h2 id="attention-heading" className="section-label">Deserves your attention</h2>
             <span className="text-[0.7rem] text-ink-faint">
               {brief.budgetLabel} · top {brief.cap}
             </span>
@@ -98,11 +100,6 @@ function Hero({ brief }: { brief: Brief }) {
         </div>
       )}
       <h1 className="lede mt-4 max-w-[36rem] text-balance">{lede}</h1>
-      <p className="mt-5 text-[0.8rem] text-ink-faint">
-        <span className="tnum">{brief.totalWatched}</span> watched ·{' '}
-        <span className="tnum">{brief.changedCount}</span> moved ·{' '}
-        <span className="tnum text-ink">{brief.attentionCount}</span> shown
-      </p>
     </section>
   )
 }
@@ -151,6 +148,8 @@ function ChangeRow({ card, brief, index }: { card: Card; brief: Brief; index: nu
   const name = brief.symbolNames[card.symbolId] ?? card.symbolId
   const sector = brief.sectors[card.symbolId]
 
+  // The residual is the product's whole claim, so it gets its own band. Volume
+  // and gap are corroborating detail and sit beneath it.
   const bands = s.contributions
     .filter((c) => c.key === 'residual' || c.key === 'volume' || c.key === 'gap')
     .map((c) => ({
@@ -159,52 +158,74 @@ function ChangeRow({ card, brief, index }: { card: Card; brief: Brief; index: nu
       detail: c.detail,
     }))
 
+  const hasDecomposition = s.expectedPct !== null && s.residualPct !== null
+
   return (
     <article
-      className="rise border-t border-ink-hairline py-7 first:border-t-0 first:pt-0"
+      className="rise border-t border-ink-hairline py-8 first:border-t-0 first:pt-0"
       style={{ animationDelay: `${index * 70}ms` }}
     >
-      <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1">
+      {/* --- identity and headline move ---------------------------------- */}
+      <header className="flex flex-wrap items-start justify-between gap-x-6 gap-y-2">
         <div className="min-w-0">
           <TierLabel tier={s.tier} />
-          <h3 className="mt-1 font-serif text-xl leading-tight text-ink">{name}</h3>
-          <p className="mt-0.5 text-[0.72rem] text-ink-faint">
+          <h3 className="mt-1.5 font-serif text-[1.35rem] leading-tight text-ink">{name}</h3>
+          <p className="mt-1 text-[0.72rem] text-ink-faint">
             {card.symbolId.replace('.NS', '')} · {sector?.name ?? 'Uncategorised'}
           </p>
         </div>
-        <div className="text-right">
-          <div className="font-serif text-2xl leading-none">
+        <div className="shrink-0 text-right">
+          <div className="figure text-[2rem]">
             <Delta value={s.returnPct} />
           </div>
-          <div className="mt-1.5">
+          <div className="mt-2 flex justify-end">
             <ProvenanceBadge provenance={card.provenance} reason={s.qualityReason} />
           </div>
         </div>
-      </div>
+      </header>
 
-      {card.group ? (
-        <p className="mt-3 border-l-2 border-ink-hairline pl-3 text-[0.8rem] leading-relaxed text-ink-muted">
-          <span className="text-ink">{card.group.sectorName} moved together.</span>{' '}
-          {card.group.members.length} of your holdings in this sector are down for the same reason —
-          shown once rather than {card.group.members.length} times.
-        </p>
-      ) : null}
-
+      {/* --- how unusual, said as a frequency ----------------------------- */}
       <div className="mt-4">
         <AttentionScore pctl={s.pctl} frequency={card.frequency} scoreText={card.scoreText} />
       </div>
 
-      {s.expectedPct !== null ? (
-        <p className="mt-3 max-w-prose text-[0.85rem] leading-relaxed text-ink-muted">
-          The market implied <span className="tnum">{s.expectedPct.toFixed(1)}%</span>. It moved{' '}
-          <span className="tnum">{s.returnPct?.toFixed(1)}%</span>, leaving{' '}
-          <span className="tnum text-ink">{Math.abs(s.residualPct ?? 0).toFixed(1)}%</span> the market
-          does not explain.
+      {card.group ? (
+        <p className="mt-4 border-l-2 border-ink-hairline pl-3 text-[0.8rem] leading-relaxed text-ink-muted">
+          <span className="text-ink">{card.group.sectorName} moved together.</span>{' '}
+          {card.group.members.length} of your holdings in this sector moved for the same reason —
+          shown once rather than {card.group.members.length} times.
         </p>
       ) : null}
 
+      {/* --- the decomposition, as a ledger ------------------------------- */}
+      {hasDecomposition ? (
+        <div className="mt-5 max-w-sm">
+          <dl>
+            <div className="ledger">
+              <dt className="text-[0.8rem] text-ink-muted">Market expected</dt>
+              <dd className="tnum text-[0.9rem] text-ink-muted">{s.expectedPct!.toFixed(1)}%</dd>
+            </div>
+            <div className="ledger">
+              <dt className="text-[0.8rem] text-ink-muted">Actual</dt>
+              <dd className="tnum text-[0.9rem] text-ink">{s.returnPct?.toFixed(1)}%</dd>
+            </div>
+            {/* The unexplained part is the reason this card exists at all. */}
+            <div className="ledger border-b-0 pt-2.5">
+              <dt className="text-[0.8rem] font-medium text-ink">Unexplained</dt>
+              <dd className="tnum font-serif text-[1.35rem] leading-none text-signal">
+                {s.residualPct! > 0 ? '+' : ''}{s.residualPct!.toFixed(1)}%
+              </dd>
+            </div>
+          </dl>
+          <p className="mt-2 text-[0.72rem] leading-relaxed text-ink-faint">
+            The market explains the first figure. The last one is what it does not.
+          </p>
+        </div>
+      ) : null}
+
+      {/* --- signature visual --------------------------------------------- */}
       {bands.length > 0 ? (
-        <div className="mt-5 space-y-2">
+        <div className="mt-6 space-y-2.5">
           {bands.map((b) => (
             <BandBreakout key={b.label} label={b.label} sigmas={b.sigmas} detail={b.detail} />
           ))}
@@ -213,22 +234,22 @@ function ChangeRow({ card, brief, index }: { card: Card; brief: Brief; index: nu
       ) : null}
 
       {card.changeId ? (
-        <div className="mt-5 flex flex-wrap gap-3">
+        <div className="mt-6 flex flex-wrap gap-2.5">
           <Link
             href={`/change/${card.changeId}`}
-            className="border border-ink px-3.5 py-1.5 text-[0.78rem] transition-colors hover:bg-ink hover:text-paper"
+            className="border border-ink px-3.5 py-2 text-[0.78rem] transition-colors hover:bg-ink hover:text-paper"
           >
             Why this?
           </Link>
           <Link
             href={`/change/${card.changeId}#investigation`}
-            className="border border-ink-hairline px-3.5 py-1.5 text-[0.78rem] text-ink-muted transition-colors hover:border-ink hover:text-ink"
+            className="border border-ink-hairline px-3.5 py-2 text-[0.78rem] text-ink-muted transition-colors hover:border-ink hover:text-ink"
           >
             Investigate
           </Link>
           <Link
             href={`/change/${card.changeId}#replay`}
-            className="border border-ink-hairline px-3.5 py-1.5 text-[0.78rem] text-ink-muted transition-colors hover:border-ink hover:text-ink"
+            className="border border-ink-hairline px-3.5 py-2 text-[0.78rem] text-ink-muted transition-colors hover:border-ink hover:text-ink"
           >
             Replay
           </Link>
@@ -242,7 +263,7 @@ function ChangeRow({ card, brief, index }: { card: Card; brief: Brief; index: nu
 
 function NothingHappened({ brief }: { brief: Brief }) {
   return (
-    <section className="mt-12 border-t border-ink-hairline pt-10">
+    <section className="section">
       <p className="font-serif text-lg text-ink">Nothing needed you.</p>
       <p className="mt-2 max-w-prose text-[0.88rem] leading-relaxed text-ink-muted">
         {brief.changedCount} of your {brief.totalWatched} stocks moved, and every one of those moves
@@ -256,7 +277,7 @@ function NothingHappened({ brief }: { brief: Brief }) {
 function FilteredNote({ brief }: { brief: Brief }) {
   if (brief.filteredCount === 0) return null
   return (
-    <section className="mt-10 border-t border-ink-hairline pt-6">
+    <section className="section-tight">
       <p className="text-[0.85rem] text-ink-muted">
         <span className="tnum text-ink">{brief.filteredCount}</span> other movements were reviewed
         and withheld. None of them cleared{' '}
@@ -270,8 +291,8 @@ function FilteredNote({ brief }: { brief: Brief }) {
 function Withheld({ brief }: { brief: Brief }) {
   if (brief.suppressed.length === 0) return null
   return (
-    <section className="mt-6 border-t border-ink-hairline pt-6">
-      <h2 className="eyebrow">Withheld — data we don’t trust</h2>
+    <section className="section-tight">
+      <h2 className="section-label">Withheld — data we don’t trust</h2>
       <ul className="mt-3 space-y-2">
         {brief.suppressed.map((s) => (
           <li key={s.symbolId} className="flex flex-wrap items-baseline gap-x-3 text-[0.82rem]">
@@ -284,7 +305,7 @@ function Withheld({ brief }: { brief: Brief }) {
       <p className="mt-3 max-w-prose text-[0.78rem] leading-relaxed text-ink-faint">
         These may have moved. We are not telling you they did, because the data behind them did not
         pass its checks — and a confident wrong alert is worse than silence.{' '}
-        <Link href="/health" className="underline decoration-ink-hairline underline-offset-4 hover:text-ink">
+        <Link href="/health" className="tap underline decoration-ink-hairline underline-offset-4 hover:text-ink">
           See what else was excluded
         </Link>
         .
@@ -299,14 +320,14 @@ function SeenControl({ brief, onDone }: { brief: Brief; onDone: () => void }) {
   if (brief.cards.length === 0 && brief.filteredCount === 0) return null
 
   return (
-    <section className="mt-10 border-t border-ink-hairline pt-6">
+    <section className="section-tight">
       <button
         disabled={busy || done}
         onClick={async () => {
           setBusy(true)
           try { await api.markAllSeen(brief.at); setDone(true); onDone() } finally { setBusy(false) }
         }}
-        className="text-[0.8rem] text-ink-muted underline decoration-ink-hairline underline-offset-4 hover:text-ink disabled:opacity-50"
+        className="tap text-[0.8rem] text-ink-muted underline decoration-ink-hairline underline-offset-4 hover:text-ink disabled:opacity-50"
       >
         {done ? 'Marked as seen' : busy ? 'Marking…' : 'Mark everything as seen'}
       </button>

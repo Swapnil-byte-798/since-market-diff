@@ -34,12 +34,15 @@ const STAGE_LABEL: Record<string, string> = {
  * difference between an agent and a script.
  */
 export function Investigation({
-  changeId, initial, onStart, poll,
+  changeId, initial, onStart, poll, subject, movePct,
 }: {
   changeId: string
   initial: InvestigationResponse | null
   onStart: () => Promise<void>
   poll: () => Promise<InvestigationResponse>
+  /** Names what is being investigated, so the panel stands on its own. */
+  subject?: string
+  movePct?: number | null
 }) {
   const [state, setState] = useState<InvestigationResponse | null>(initial)
   const [running, setRunning] = useState(false)
@@ -69,8 +72,18 @@ export function Investigation({
   }
 
   return (
-    <section id="investigation" className="mt-14 scroll-mt-8 border-t border-ink-hairline pt-8">
-      <h2 className="eyebrow">Investigation</h2>
+    <section id="investigation" className="section scroll-mt-8">
+      <h2 className="section-label">Investigation</h2>
+      {subject ? (
+        <p className="mt-2 font-serif text-[1.15rem] leading-snug text-ink">
+          {done || running ? 'Investigating why' : 'Why did'} {subject}{' '}
+          {done || running ? 'moved' : 'move'}{' '}
+          {typeof movePct === 'number' ? (
+            <span className="tnum">{movePct > 0 ? '+' : ''}{movePct.toFixed(1)}%</span>
+          ) : null}
+          {done || running ? '' : '?'}
+        </p>
+      ) : null}
 
       {!done && !running ? (
         <Intro onStart={() => void start()} />
@@ -183,16 +196,17 @@ function Trail({ trail, activeStage, running }: { trail: TrailStep[]; activeStag
         {trail.map((s) => (
           <li key={`${s.seq}-${s.tool}`} className="rise">
             {s.narrowedBy ? (
-              <p className="mb-1 text-[0.7rem] text-signal">
-                ↳ narrowed because the {s.narrowedBy}
+              <p className="mb-1.5 ml-[1.1rem] border-l-2 border-signal pl-2.5 text-[0.72rem] leading-snug text-signal">
+                Narrowed because the {s.narrowedBy} — this step was chosen from the last result,
+                not from a script.
               </p>
             ) : null}
-            <div className="grid grid-cols-[1.25rem_1fr] gap-x-2">
-              <span className="tnum text-[0.7rem] leading-5 text-ink-faint">{s.seq}</span>
+            <div className="grid grid-cols-[1.1rem_1fr] gap-x-2.5">
+              <span aria-hidden className="text-[0.72rem] leading-5 text-ink-muted">✓</span>
               <span className="min-w-0">
-                <span className="text-[0.83rem] text-ink">{s.label}</span>
-                <span className="mt-0.5 block text-[0.75rem] leading-relaxed text-ink-muted">{s.headline}</span>
-                <span className="mt-0.5 block font-mono text-[0.65rem] text-ink-faint">{s.tool}</span>
+                <span className="section-label block">{s.label}</span>
+                <span className="mt-1 block text-[0.85rem] leading-relaxed text-ink">{s.headline}</span>
+                <span className="mt-0.5 block font-mono text-[0.63rem] text-ink-faint">{s.tool}</span>
               </span>
             </div>
           </li>
@@ -291,7 +305,7 @@ function Evidence({ rows }: { rows: EvidenceRow[] }) {
   if (rows.length === 0) return null
   return (
     <div className="mt-8 border-t border-ink-hairline pt-6">
-      <h3 className="eyebrow">Evidence behind the conclusion</h3>
+      <h3 className="section-label">Evidence behind the conclusion</h3>
       <ul className="mt-3 space-y-3">
         {rows.map((e, i) => (
           <li key={e.id} className="rise border-l border-ink-hairline pl-3" style={{ animationDelay: `${i * 80}ms` }}>

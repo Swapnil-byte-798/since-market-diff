@@ -27,7 +27,7 @@ export function TimeTravel({
       <button
         onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
-        className={`text-[0.75rem] underline decoration-ink-hairline underline-offset-4 transition-colors hover:text-ink ${
+        className={`tap text-[0.75rem] underline decoration-ink-hairline underline-offset-4 transition-colors hover:text-ink ${
           active ? 'text-signal' : 'text-ink-faint'
         }`}
       >

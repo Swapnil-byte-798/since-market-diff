@@ -45,18 +45,55 @@ export default function EvalPage() {
         </p>
       </header>
 
-      <section className="mt-9 border-t border-ink-hairline pt-7">
-        <p className="font-serif text-[1.35rem] leading-snug text-ink">
-          On held-out data, ranking by market-adjusted surprise scored{' '}
-          <span className="tnum">{since.toFixed(3)}</span> against{' '}
-          <span className="tnum">{baseline.toFixed(3)}</span> for absolute % change —
-          <span className="text-signal"> {lift > 0 ? '+' : ''}{lift.toFixed(0)}% </span>
-          on Precision@{r.topK}.
+      {/* The result, given the weight it has earned. Values are read from the
+          harness output — nothing here is written by hand. */}
+      <section className="mt-9 border-y border-ink-hairline py-8">
+        <div className="flex flex-wrap items-end gap-x-10 gap-y-6">
+          <div>
+            <div className="figure text-[3.5rem] text-signal">
+              {lift > 0 ? '+' : ''}{lift.toFixed(0)}%
+            </div>
+            <div className="section-label mt-2">Precision@{r.topK} improvement</div>
+          </div>
+          <dl className="min-w-[13rem] flex-1">
+            <div className="ledger">
+              <dt className="text-[0.82rem] text-ink">Since composite</dt>
+              <dd className="tnum text-[1.05rem] text-ink">{since.toFixed(3)}</dd>
+            </div>
+            <div className="ledger">
+              <dt className="text-[0.82rem] text-ink-muted">Baseline (% change)</dt>
+              <dd className="tnum text-[1.05rem] text-ink-muted">{baseline.toFixed(3)}</dd>
+            </div>
+          </dl>
+        </div>
+        <p className="mt-5 max-w-prose text-[0.8rem] leading-relaxed text-ink-faint">
+          Measured on {r.dataset.evaluationSessions} held-out sessions, calibrated on{' '}
+          {r.dataset.calibrationSessions} disjoint earlier ones, against{' '}
+          <span className="font-mono text-[0.72rem]">{r.labels[0]?.id}</span>.
         </p>
       </section>
 
+      {/* What each setting costs, before the methodology. */}
       <section className="mt-10">
-        <h2 className="eyebrow">Precision@{r.topK}, by label definition</h2>
+        <h2 className="section-label">What an attention setting costs</h2>
+        <dl className="mt-4 grid grid-cols-1 gap-x-6 gap-y-5 sm:grid-cols-3">
+          {Object.entries(r.alertVolume).map(([k, v], i) => (
+            <div key={k} className={i > 0 ? 'sm:border-l sm:border-ink-hairline sm:pl-6' : ''}>
+              <dt className="section-label">{k}</dt>
+              <dd className="figure mt-1.5 text-[1.6rem]">
+                {v.meanAlertsPerSessionPer50Symbols.toFixed(2)}
+              </dd>
+              <p className="mt-1 text-[0.72rem] leading-snug text-ink-faint">
+                alerts per session · p{v.thresholdPercentile} ·{' '}
+                <span className="tnum">{v.precision.toFixed(3)}</span> precision
+              </p>
+            </div>
+          ))}
+        </dl>
+      </section>
+
+      <section className="section">
+        <h2 className="section-label">Every ranker, every label</h2>
         <div className="mt-4 overflow-x-auto">
           <table className="w-full min-w-[34rem] text-[0.85rem]">
             <thead>
@@ -102,8 +139,8 @@ export default function EvalPage() {
         </dl>
       </section>
 
-      <section className="mt-10 border-t border-ink-hairline pt-7">
-        <h2 className="eyebrow">What a budget actually costs you</h2>
+      <section className="section">
+        <h2 className="section-label">Alert volume in full</h2>
         <p className="mt-3 max-w-prose text-[0.85rem] leading-relaxed text-ink-muted">
           Because the score is a calibrated percentile, the attention setting is a false-positive
           rate rather than a slider — so what it costs you is measurable rather than asserted.
@@ -144,8 +181,8 @@ export default function EvalPage() {
         </p>
       </section>
 
-      <section className="mt-10 border-t border-ink-hairline pt-7">
-        <h2 className="eyebrow">Method, and what it does not prove</h2>
+      <section className="section">
+        <h2 className="section-label">Method, and what it does not prove</h2>
         <ul className="mt-3 max-w-prose space-y-3 text-[0.82rem] leading-relaxed text-ink-muted">
           <li>
             <span className="text-ink">The harness runs the production code.</span>{' '}
