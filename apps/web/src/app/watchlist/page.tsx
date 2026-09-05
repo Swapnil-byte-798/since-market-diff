@@ -1,12 +1,13 @@
 'use client'
 import { useCallback, useEffect, useState } from 'react'
-import { api, type WatchlistItem, type SymbolRow } from '@/lib/api'
+import { api, type WatchlistItem, type SymbolRow, type MarketInfo } from '@/lib/api'
 import { ProvenanceBadge } from '@/components/Indicators'
 import { Skeleton, ErrorState, EmptyState } from '@/components/States'
-import { rupees, ago } from '@/components/format'
+import { money, ago } from '@/components/format'
 
 export default function WatchlistPage() {
   const [items, setItems] = useState<WatchlistItem[] | null>(null)
+  const [market, setMarket] = useState<MarketInfo | undefined>(undefined)
   const [error, setError] = useState<string | null>(null)
 
   const load = useCallback(async () => {
@@ -15,6 +16,7 @@ export default function WatchlistPage() {
       await api.session()
       const wl = await api.watchlist()
       setItems(wl.items)
+      setMarket(wl.market)
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     }
@@ -46,7 +48,7 @@ export default function WatchlistPage() {
         />
       ) : (
         <ul className="mt-8">
-          {items.map((it) => <Row key={it.symbolId} item={it} onChanged={load} />)}
+          {items.map((it) => <Row key={it.symbolId} item={it} market={market} onChanged={load} />)}
         </ul>
       )}
     </div>
@@ -100,7 +102,7 @@ function AddSymbol({ onAdded, existing }: { onAdded: () => void; existing: Set<s
   )
 }
 
-function Row({ item, onChanged }: { item: WatchlistItem; onChanged: () => void }) {
+function Row({ item, market, onChanged }: { item: WatchlistItem; market?: MarketInfo; onChanged: () => void }) {
   const [editing, setEditing] = useState(false)
   const [value, setValue] = useState(item.threshold?.value?.toString() ?? '')
   const [kind, setKind] = useState<'ABOVE' | 'BELOW'>(item.threshold?.kind ?? 'BELOW')
@@ -121,7 +123,7 @@ function Row({ item, onChanged }: { item: WatchlistItem; onChanged: () => void }
           </div>
         </div>
         <div className="shrink-0 text-right">
-          <div className="tnum text-[0.95rem] text-ink">{rupees(item.price)}</div>
+          <div className="tnum text-[0.95rem] text-ink">{money(item.price, market)}</div>
           <div className="mt-0.5 flex justify-end">
             <ProvenanceBadge provenance={item.provenance} />
           </div>
@@ -133,7 +135,7 @@ function Row({ item, onChanged }: { item: WatchlistItem; onChanged: () => void }
           {item.threshold ? (
             <span className="text-ink-muted">
               <span aria-hidden>◦ </span>Alert {item.threshold.kind === 'BELOW' ? 'below' : 'above'}{' '}
-              <span className="tnum text-ink">{rupees(item.threshold.value)}</span>
+              <span className="tnum text-ink">{money(item.threshold.value, market)}</span>
             </span>
           ) : (
             <span className="text-ink-faint">No threshold set</span>

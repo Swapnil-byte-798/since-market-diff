@@ -21,7 +21,7 @@
     "web": "npm run -w @since/web dev",
     "dev": "node scripts/dev.mjs",
     "build": "npm run -w @since/web build",
-    "test": "npm run -w @since/core test && npm run -w @since/agent test",
+    "test": "npm run -w @since/core test && npm run -w @since/agent test && npm run -w @since/ingest test",
     "typecheck": "node scripts/typecheck.mjs",
     "smoke": "tsx scripts/smoke-brief.ts",
     "setup": "npm run env:init && npm run db:up && npm run db:push && npm run ingest && npm run eval",
@@ -34,7 +34,8 @@
     "eval:us": "npm run -w @since/eval start -- us",
     "agent:check": "tsx scripts/agent-check.ts",
     "start": "node scripts/serve.mjs",
-    "deploy:seed": "tsx scripts/deploy-seed.mjs"
+    "deploy:seed": "tsx scripts/deploy-seed.mjs",
+    "db:snapshot": "node scripts/db-snapshot.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",

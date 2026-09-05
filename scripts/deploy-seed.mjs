@@ -5,9 +5,15 @@
  * only if the database is actually empty. A deploy must not silently wipe data
  * that is already there, and it must not require anyone to open a shell.
  *
- * Uses the synthetic provider deliberately — it needs no third-party key and no
- * network, so a deploy cannot fail because someone else's API is rate-limiting
- * us. The data is labelled SIMULATED everywhere it appears, exactly as locally.
+ * The normal path is that this does nothing: a snapshot of real market data is
+ * restored into the database before the first deploy (npm run db:snapshot), so
+ * the check below finds rows and leaves them alone.
+ *
+ * The fallback seeds with the synthetic provider, which needs no third-party key
+ * and no network, so a deploy can still come up if the snapshot step was
+ * skipped. That data is labelled SIMULATED everywhere it appears, exactly as it
+ * is locally — a deployment that lost its data says so rather than quietly
+ * presenting invented prices as real ones.
  *
  *   npm run deploy:seed
  */

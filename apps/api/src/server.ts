@@ -12,7 +12,14 @@ import {
   type AttentionBudget,
 } from '@since/core'
 import { investigate, type Stage } from '@since/agent'
-import { evaluateBrief, calendar, providerInfo, BENCHMARK_ID } from './services/brief.js'
+import { evaluateBrief, calendar, providerInfo, activeMarket, BENCHMARK_ID } from './services/brief.js'
+import type { MarketDef } from '@since/core'
+
+/** The client needs currency and timezone to render prices and times honestly. */
+const marketPayload = (m: MarketDef) => ({
+  id: m.id, label: m.label, timeZone: m.timeZone,
+  currency: m.currency, locale: m.locale, benchmark: m.benchmarkLabel,
+})
 import { persistChanges, getChange, getInvestigation } from './services/changes.js'
 import { badRequest, notFound, unauthorized, send, HttpError } from './errors.js'
 
@@ -151,9 +158,11 @@ app.get('/api/watchlist', async (req) => {
   const thresholdBy = new Map(thresholds.map((t) => [t.symbolId, t]))
 
   const wlMeta = await providerInfo()
+  const wlMarket = await activeMarket()
   return {
     watchlistId: wl.id,
     ...wlMeta,
+    market: marketPayload(wlMarket),
     items: items.map((i) => ({
       ...i,
       provenance: provenanceOf({
@@ -332,6 +341,7 @@ app.get('/api/changes/:id', async (req) => {
       createdAt: change.createdAt.toISOString(),
     },
     symbol: sym ? { id: sym.id, ticker: sym.ticker, name: sym.name, sectorId: sym.sectorId } : null,
+    market: marketPayload(await activeMarket()),
     frequency: frequencyPhrase(change.pctl),
     scoreText: displayPercentile(change.pctl),
     // A change is always a past window, so it is never labelled as current.

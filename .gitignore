@@ -11,3 +11,7 @@ coverage/
 
 # tunnel URL written by `npm run share`
 .tunnel-url
+
+# Database snapshot used to seed a deployment (regenerate with npm run db:snapshot)
+.snapshot.sql
+.ingest-us.log

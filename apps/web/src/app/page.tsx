@@ -91,9 +91,9 @@ function Hero({ brief }: { brief: Brief }) {
             Since you last looked
           </p>
           <p className="mt-1.5 flex flex-wrap items-baseline gap-x-2.5 text-[0.8rem] text-ink">
-            <span className="tnum">{timeIST(w.windowStart)}</span>
+            <span className="tnum">{timeIST(w.windowStart, brief.market)}</span>
             <span className="text-ink-faint">·</span>
-            <span className="tnum text-ink-muted">{dateIST(w.windowStart)}</span>
+            <span className="tnum text-ink-muted">{dateIST(w.windowStart, brief.market)}</span>
             <span className="text-ink-faint">·</span>
             <span className="text-ink-muted">away <span className="tnum text-ink">{w.awayLabel}</span></span>
           </p>

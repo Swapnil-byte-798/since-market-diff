@@ -26,8 +26,12 @@ export class TwelveDataProvider implements MarketDataProvider {
   private readonly throttle: Throttle
   private readonly base = 'https://api.twelvedata.com'
 
-  constructor(private readonly apiKey: string, opts: { minGapMs?: number } = {}) {
+  /** Exchange timezone. Twelve Data returns intraday stamps in local time. */
+  private readonly timeZone: string
+
+  constructor(private readonly apiKey: string, opts: { minGapMs?: number; timeZone?: string } = {}) {
     if (!apiKey) throw new Error('TWELVEDATA_API_KEY is required for the twelvedata provider')
+    this.timeZone = opts.timeZone ?? 'America/New_York'
     // Free tier is 8 req/min. 8s spacing keeps us just inside it.
     this.throttle = new Throttle(opts.minGapMs ?? 8000)
   }
@@ -48,7 +52,7 @@ export class TwelveDataProvider implements MarketDataProvider {
   async intradayBars(symbolId: string, fromDate: string, toDate: string): Promise<IntradayBar[]> {
     const rows = await this.series(symbolId, '5min', fromDate, toDate)
     return rows.map((r) => ({
-      ts: new Date(`${r.datetime.replace(' ', 'T')}${r.datetime.length <= 16 ? ':00' : ''}+05:30`),
+      ts: zonedToUtc(r.datetime, this.timeZone),
       open: r.open, high: r.high, low: r.low, close: r.close, volume: r.volume,
     }))
   }
@@ -119,6 +123,30 @@ export function mapSymbol(symbolId: string): { symbol: string; exchange: string 
   // tier serves without an exchange qualifier.
   if (symbolId.endsWith('.NS')) return { symbol: symbolId.slice(0, -3), exchange: 'NSE' }
   return { symbol: symbolId, exchange: null }
+}
+
+/**
+ * Interpret an exchange-local timestamp in a given zone, as UTC.
+ *
+ * Twelve Data returns intraday stamps in the exchange's own local time with no
+ * offset. A hardcoded +05:30 was fine while the only market was the NSE and
+ * silently shifted every US bar by nine and a half hours — into the small hours
+ * of the wrong day, where the scoring engine found no session at all.
+ *
+ * Formatting the instant back out in the target zone recovers the true offset,
+ * which means DST is handled without a table.
+ */
+export function zonedToUtc(local: string, timeZone: string): Date {
+  const iso = local.replace(' ', 'T') + (local.length <= 16 ? ':00' : '')
+  const asIfUtc = Date.parse(`${iso}Z`)
+  if (Number.isNaN(asIfUtc)) return new Date(local)
+
+  // What local time does that instant actually show in the zone?
+  const shown = new Date(asIfUtc).toLocaleString('sv-SE', { timeZone })
+  const shownMs = Date.parse(`${shown.replace(' ', 'T')}Z`)
+  if (Number.isNaN(shownMs)) return new Date(asIfUtc)
+
+  return new Date(asIfUtc + (asIfUtc - shownMs))
 }
 
 function num(v: unknown): number {

@@ -61,7 +61,7 @@ export default function ChangePage() {
         <TierLabel tier={c.tier} />
         <h1 className="lede mt-2">{name}</h1>
         <p className="mt-2 text-[0.78rem] text-ink-faint">
-          {c.symbolId.replace('.NS', '')} · {dateIST(c.windowEnd)} · window {timeIST(c.windowStart)} → {timeIST(c.windowEnd)}
+          {c.symbolId.replace('.NS', '')} · {dateIST(c.windowEnd, detail.market)} · window {timeIST(c.windowStart, detail.market)} → {timeIST(c.windowEnd, detail.market)}
         </p>
         <div className="mt-5 flex flex-wrap items-end justify-between gap-4">
           <div className="font-serif text-4xl leading-none">
@@ -146,7 +146,7 @@ export default function ChangePage() {
       />
 
       {/* -------------------------------------------------------- replay -- */}
-      <Replay data={replay} />
+      <Replay data={replay} market={detail.market} />
 
       <Feedback changeId={id} />
     </div>

@@ -1,0 +1,33 @@
+# Keep the deployment answering quickly.
+#
+# Render's free tier sleeps a service after 15 minutes idle and takes ~50s to
+# wake, and Neon suspends an idle database. A reviewer opening the link cold
+# would meet a blank minute and conclude the thing is broken. A cheap GET every
+# ten minutes keeps both awake.
+#
+# Note: GitHub disables scheduled workflows after 60 days without repo activity.
+name: keep-warm
+
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping the health endpoint
+        run: |
+          URL="${{ vars.DEPLOY_URL }}"
+          if [ -z "$URL" ]; then
+            echo "DEPLOY_URL repository variable is not set; nothing to ping."
+            exit 0
+          fi
+          # /api/health touches the database, so this wakes Neon too, not just
+          # the web service in front of it.
+          code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 90 "$URL/api/health")
+          echo "GET $URL/api/health -> $code"
+          # A sleeping service still answers slowly rather than failing; a
+          # non-2xx here means the deployment is actually unhealthy.
+          [ "$code" -ge 200 ] && [ "$code" -lt 400 ]

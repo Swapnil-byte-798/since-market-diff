@@ -4,7 +4,7 @@ import { api, type DataHealth } from '@/lib/api'
 import { ProvenanceBadge } from '@/components/Indicators'
 import type { Provenance } from '@/lib/api'
 import { Skeleton, ErrorState } from '@/components/States'
-import { rupees, ago } from '@/components/format'
+import { money, ago } from '@/components/format'
 import { Integrity } from '@/components/Integrity'
 
 export default function HealthPage() {
@@ -94,7 +94,7 @@ export default function HealthPage() {
                       {s.values.map((v) => (
                         <tr key={v.source}>
                           <td className="pr-4 text-ink-faint">{v.source}</td>
-                          <td className="tnum pr-4 text-ink">{rupees(v.price)}</td>
+                          <td className="tnum pr-4 text-ink">{money(v.price, data.market)}</td>
                           <td className="text-ink-faint">{ago(v.observedAt)}</td>
                         </tr>
                       ))}

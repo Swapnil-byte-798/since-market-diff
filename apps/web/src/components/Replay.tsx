@@ -1,6 +1,6 @@
 'use client'
 import { useMemo, useState } from 'react'
-import type { ReplayResponse } from '@/lib/api'
+import type { ReplayResponse, MarketInfo } from '@/lib/api'
 import { timeIST } from './format'
 
 /**
@@ -11,7 +11,7 @@ import { timeIST } from './format'
  * accumulating minute by minute. The marker is the moment it crossed the
  * threshold that would have earned your attention.
  */
-export function Replay({ data }: { data: ReplayResponse | null }) {
+export function Replay({ data, market }: { data: ReplayResponse | null; market?: MarketInfo }) {
   const [hover, setHover] = useState<number | null>(null)
 
   const geometry = useMemo(() => {
@@ -49,7 +49,7 @@ export function Replay({ data }: { data: ReplayResponse | null }) {
               viewBox={`0 0 ${geometry.W} ${geometry.H}`}
               className="w-full"
               role="img"
-              aria-label={`Cumulative market-adjusted move from ${timeIST(data.windowStart)} to ${timeIST(data.windowEnd)}, ending at ${(geometry.pts[geometry.pts.length - 1]?.residualSigmas ?? 0).toFixed(1)} sigma`}
+              aria-label={`Cumulative market-adjusted move from ${timeIST(data.windowStart, market)} to ${timeIST(data.windowEnd, market)}, ending at ${(geometry.pts[geometry.pts.length - 1]?.residualSigmas ?? 0).toFixed(1)} sigma`}
               onMouseLeave={() => setHover(null)}
             >
               {/* normal band: +/- 1 sigma */}
@@ -88,37 +88,37 @@ export function Replay({ data }: { data: ReplayResponse | null }) {
               ) : null}
             </svg>
             <figcaption className="mt-2 flex justify-between text-[0.7rem] text-ink-faint">
-              <span>{timeIST(data.windowStart)}</span>
+              <span>{timeIST(data.windowStart, market)}</span>
               {hover !== null ? (
                 <span className="tnum text-ink">
-                  {timeIST(geometry.pts[hover]!.ts)} · {(geometry.pts[hover]!.residualSigmas ?? 0).toFixed(2)}σ ·{' '}
+                  {timeIST(geometry.pts[hover]!.ts, market)} · {(geometry.pts[hover]!.residualSigmas ?? 0).toFixed(2)}σ ·{' '}
                   {(geometry.pts[hover]!.residualPct ?? 0).toFixed(2)}% unexplained
                 </span>
               ) : (
                 <span>cumulative market-adjusted move, in σ</span>
               )}
-              <span>{timeIST(data.windowEnd)}</span>
+              <span>{timeIST(data.windowEnd, market)}</span>
             </figcaption>
           </figure>
 
           <ol className="mt-7 space-y-0">
-            <TimelineRow time={timeIST(data.windowStart)} label="You last looked" />
+            <TimelineRow time={timeIST(data.windowStart, market)} label="You last looked" />
             {data.events.map((e) => (
               <TimelineRow
                 key={e.publishedAt + e.headline}
-                time={timeIST(e.publishedAt)}
+                time={timeIST(e.publishedAt, market)}
                 label={e.headline}
                 sub={`${e.type.toLowerCase()} · ${e.source}`}
               />
             ))}
             {data.attentionCrossedAt ? (
               <TimelineRow
-                time={timeIST(data.attentionCrossedAt)}
+                time={timeIST(data.attentionCrossedAt, market)}
                 label="Crossed 2σ of unexplained movement"
                 accent
               />
             ) : null}
-            <TimelineRow time={timeIST(data.windowEnd)} label="You returned" />
+            <TimelineRow time={timeIST(data.windowEnd, market)} label="You returned" />
           </ol>
 
           {data.events.length > 0 ? (

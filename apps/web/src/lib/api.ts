@@ -57,6 +57,10 @@ export const api = {
 
 /* ------------------------------------------------------------------ types */
 
+export interface MarketInfo {
+  id: string; label: string; timeZone: string
+  currency: string; locale: string; benchmark: string
+}
 export type Tier = 'NORMAL' | 'WORTH_WATCHING' | 'SIGNIFICANT' | 'CRITICAL' | 'SUPPRESSED'
 export type Quality = 'FRESH' | 'DELAYED' | 'STALE' | 'UNAVAILABLE' | 'CONFLICTING' | 'SUSPECT'
 export type Provenance =
@@ -94,6 +98,7 @@ export interface Brief {
   symbolNames: Record<string, string>
   sectors: Record<string, { id: string; name: string } | null>
   simulated: boolean; provider: string; isReplay?: boolean
+  market?: MarketInfo
 }
 export interface SymbolRow { id: string; ticker: string; name: string; sectorId: string | null }
 export interface WatchlistItem extends SymbolRow {
@@ -103,7 +108,7 @@ export interface WatchlistItem extends SymbolRow {
 }
 export interface WatchlistResponse {
   watchlistId: string | null; items: WatchlistItem[]
-  provider?: string; simulated?: boolean
+  provider?: string; simulated?: boolean; market?: MarketInfo
 }
 export interface ChangeDetail {
   change: {
@@ -112,6 +117,7 @@ export interface ChangeDetail {
     returnPct: number | null; quality: Quality
   }
   symbol: SymbolRow | null
+  market?: MarketInfo
   frequency: string
   scoreText?: ScoreText
   provenance?: Provenance
@@ -155,6 +161,7 @@ export interface QuarantineRow {
 }
 export interface DataHealth {
   provider: string; simulated: boolean; marketOpen: boolean; at: string
+  market?: MarketInfo
   symbols: { symbolId: string; quality: Quality; reason: string; provenance?: Provenance; ageMs: number | null; sources: string[]
     values: { source: string; price: number | null; observedAt: string }[] }[]
   quarantined: QuarantineRow[]

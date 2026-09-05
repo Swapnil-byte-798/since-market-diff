@@ -1,17 +1,53 @@
 import { and, eq, inArray } from 'drizzle-orm'
 import { db, schema, marketQueries as q } from '@since/db'
 import {
-  TradingCalendar, resolveWindow, scoreChange, composeBrief,
+  TradingCalendar, resolveWindow, scoreChange, composeBrief, marketFor, type MarketDef,
   assessFreshness, assessConflict, combine, detectSuspectBar,
   logReturn, mad, frequencyPhrase, istDate,
   type Brief, type ScoreInput, type ScoreResult, type SymbolStats,
   type AttentionBudget, type QualityAssessment,
 } from '@since/core'
 
+/**
+ * Which market this deployment serves, derived from the data rather than
+ * configured.
+ *
+ * Ingestion decides the universe; the API follows. A config flag here would be
+ * a second source of truth that can silently disagree with the database — and
+ * the failure mode is scoring US prices against a NIFTY benchmark, which would
+ * look like a broken model rather than a broken setting.
+ */
+let marketCache: { market: MarketDef; at: number } | null = null
+const MARKET_TTL_MS = 60_000
+
+export async function activeMarket(): Promise<MarketDef> {
+  if (marketCache && Date.now() - marketCache.at < MARKET_TTL_MS) return marketCache.market
+  const rows = await db.select({ id: schema.symbols.id }).from(schema.symbols)
+    .where(eq(schema.symbols.id, '__meta__:us')).limit(1)
+  // Both universes can coexist; the one with a seeded demo watchlist wins.
+  const [item] = await db.select({ symbolId: schema.watchlistItems.symbolId })
+    .from(schema.watchlistItems).limit(1)
+  const id = item ? (item.symbolId.endsWith('.NS') ? 'nifty50' : 'us') : (rows[0] ? 'us' : 'nifty50')
+  const market = marketFor(id)
+  marketCache = { market, at: Date.now() }
+  return market
+}
+
+/** Benchmark for the active market. */
+export async function benchmarkId(): Promise<string> {
+  return (await activeMarket()).benchmarkId
+}
+
+/** Retained for callers that have not been threaded through yet. */
 export const BENCHMARK_ID = '^NSEI'
 
 export interface BriefResult extends Brief {
   at: string
+  /** Which exchange these prices belong to, so the client formats correctly. */
+  market: {
+    id: string; label: string; timeZone: string
+    currency: string; locale: string; benchmark: string
+  }
   symbolNames: Record<string, string>
   sectors: Record<string, { id: string; name: string } | null>
   /** True when the underlying dataset is simulated. Surfaced in the UI. */
@@ -24,14 +60,16 @@ const CALENDAR_TTL_MS = 60_000
 
 export async function calendar(): Promise<TradingCalendar> {
   if (calendarCache && Date.now() - calendarCache.loadedAt < CALENDAR_TTL_MS) return calendarCache.cal
-  const cal = new TradingCalendar(await q.sessionDates(BENCHMARK_ID))
+  const market = await activeMarket()
+  const cal = new TradingCalendar(await q.sessionDates(market.benchmarkId), market)
   calendarCache = { cal, loadedAt: Date.now() }
   return cal
 }
 
 export async function providerInfo(): Promise<{ provider: string; simulated: boolean }> {
+  const market = await activeMarket()
   const rows = await db.select({ name: schema.symbols.name }).from(schema.symbols)
-    .where(eq(schema.symbols.id, '__meta__:nifty50')).limit(1)
+    .where(eq(schema.symbols.id, `__meta__:${market.id}`)).limit(1)
   const provider = rows[0]?.name?.replace(/^provider:/, '') ?? 'unknown'
   // Only the synthetic provider generates data. Anything else is observed.
   return { provider, simulated: provider === 'synthetic' || provider === 'unknown' }
@@ -52,6 +90,8 @@ export async function evaluateBrief(params: {
 }): Promise<BriefResult> {
   const { userId, at } = params
   const cal = await calendar()
+  const market = await activeMarket()
+  const BENCH = market.benchmarkId
 
   const [settingsRow] = await db.select().from(schema.attentionSettings)
     .where(eq(schema.attentionSettings.userId, userId)).limit(1)
@@ -65,6 +105,10 @@ export async function evaluateBrief(params: {
   const symbolIds = items.map((i) => i.symbolId)
 
   const meta = await providerInfo()
+  const marketPayload = {
+    id: market.id, label: market.label, timeZone: market.timeZone,
+    currency: market.currency, locale: market.locale, benchmark: market.benchmarkLabel,
+  }
   const emptyWindow = resolveWindow({ lastSeenAt: null, at, calendar: cal })
   // Sentinel for the reduce below: any real cursor must beat it.
   const farFuture = { ...emptyWindow, windowStart: new Date(8640000000000000) }
@@ -75,7 +119,7 @@ export async function evaluateBrief(params: {
         scored: [], window: emptyWindow, budget, cap,
         indexReturn: null, indexSigma: null, sectorOf: () => null,
       }),
-      at: at.toISOString(), symbolNames: {}, sectors: {}, ...meta,
+      at: at.toISOString(), symbolNames: {}, sectors: {}, market: marketPayload, ...meta,
     }
   }
 
@@ -84,7 +128,7 @@ export async function evaluateBrief(params: {
       .where(and(eq(schema.readCursors.userId, userId), inArray(schema.readCursors.symbolId, symbolIds))),
     db.select().from(schema.userThresholds)
       .where(and(eq(schema.userThresholds.userId, userId), inArray(schema.userThresholds.symbolId, symbolIds))),
-    q.symbolsWithSectors([...symbolIds, BENCHMARK_ID]),
+    q.symbolsWithSectors([...symbolIds, BENCH]),
     q.statsFor(symbolIds, istDate(at)),
     q.observationsFor(symbolIds, at),
   ])
@@ -108,20 +152,20 @@ export async function evaluateBrief(params: {
     else byStart.set(key, [id])
   }
 
-  const endPrices = await q.pricesAt([...symbolIds, BENCHMARK_ID], at)
+  const endPrices = await q.pricesAt([...symbolIds, BENCH], at)
   const startPrices = new Map<string, { price: number }>()
   const indexStartByTime = new Map<number, number | null>()
   for (const [startMs, ids] of byStart) {
     const start = new Date(startMs)
-    const prices = await q.pricesAt([...ids, BENCHMARK_ID], start)
+    const prices = await q.pricesAt([...ids, BENCH], start)
     for (const id of ids) {
       const p = prices.get(id)
       if (p) startPrices.set(id, p)
     }
-    indexStartByTime.set(startMs, prices.get(BENCHMARK_ID)?.price ?? null)
+    indexStartByTime.set(startMs, prices.get(BENCH)?.price ?? null)
   }
 
-  const indexEnd = endPrices.get(BENCHMARK_ID)?.price ?? null
+  const indexEnd = endPrices.get(BENCH)?.price ?? null
   const marketOpen = cal.isOpen(at)
   const lastClose = cal.lastSessionCloseAt(at)
 
@@ -133,7 +177,7 @@ export async function evaluateBrief(params: {
   const earliestWindow = new Date(Math.min(...[...windows.values()].map((w) => w.windowStart.getTime())))
   const [barsBySymbol, indexBarsList, actionsBySymbol, eventsBySymbol, idxSigma] = await Promise.all([
     q.dailyBarsBatch(symbolIds, barsFrom, barsTo),
-    q.dailyBarsBetween(BENCHMARK_ID, barsFrom, barsTo),
+    q.dailyBarsBetween(BENCH, barsFrom, barsTo),
     q.corporateActionsBatch(symbolIds, barsFrom, barsTo),
     q.eventsBatch(symbolIds, earliestWindow, at),
     benchmarkSigma(1),
@@ -207,6 +251,7 @@ export async function evaluateBrief(params: {
   return {
     ...brief,
     at: at.toISOString(),
+    market: marketPayload,
     symbolNames: Object.fromEntries(symbolRows.map((s) => [s.id, s.name])),
     sectors: Object.fromEntries(symbolIds.map((id) => {
       const sym = symbolById.get(id)

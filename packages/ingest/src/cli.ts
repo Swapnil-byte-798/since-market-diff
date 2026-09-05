@@ -11,7 +11,7 @@
  */
 import { sql, db, schema } from '@since/db'
 import { desc, eq, inArray, sql as dsql } from 'drizzle-orm'
-import { detectSuspectBar, logReturn, type DailyBar } from '@since/core'
+import { detectSuspectBar, logReturn, marketFor, type DailyBar } from '@since/core'
 import { SECTORS, universeFor, type UniverseName } from './universe.js'
 import { YahooProvider } from './providers/yahoo.js'
 import { SyntheticProvider } from './providers/synthetic.js'
@@ -48,15 +48,17 @@ const DEMO_EMAIL = 'demo@since.local'
 const DEMO_WATCHLIST_SIZE = 30
 
 /**
- * Symbols carrying injected data-quality faults.
+ * Symbols carrying injected data-quality faults, per universe.
  *
  * STALE_FEED_SYMBOL gets NO closing-price observation written for it. That is
  * what a stopped feed actually means — and without it the fault silently expires
  * at 15:30 when the session-close observation lands and supersedes it, turning
  * the "stale data" scenario back into a healthy one mid-demo.
  */
-const STALE_FEED_SYMBOL = 'RELIANCE.NS'
-const CONFLICT_SYMBOL = 'ONGC.NS'
+const FAULT_SYMBOLS: Record<string, { stale: string; conflict: string }> = {
+  nifty50: { stale: 'RELIANCE', conflict: 'ONGC' },
+  us: { stale: 'XOM', conflict: 'CVX' },
+}
 
 /**
  * Pick a provider.
@@ -66,12 +68,12 @@ const CONFLICT_SYMBOL = 'ONGC.NS'
  * falls back to the deterministic synthetic one if the benchmark cannot be
  * fetched — loudly, and recorded on every observation.
  */
-function buildProvider(name: string, toDate: string): MarketDataProvider {
+function buildProvider(name: string, toDate: string, timeZone: string): MarketDataProvider {
   const key = process.env.TWELVEDATA_API_KEY
   if (name === 'synthetic') return new SyntheticProvider(toDate)
-  if (name === 'twelvedata') return new TwelveDataProvider(requireKey(key))
+  if (name === 'twelvedata') return new TwelveDataProvider(requireKey(key), { timeZone })
   if (name === 'yahoo') return new YahooProvider()
-  return key ? new TwelveDataProvider(key) : new YahooProvider()
+  return key ? new TwelveDataProvider(key, { timeZone }) : new YahooProvider()
 }
 
 function requireKey(key: string | undefined): string {
@@ -90,7 +92,7 @@ async function main(): Promise<void> {
   const fromDate = new Date(today.getTime() - YEARS * 365 * 86400_000).toISOString().slice(0, 10)
   const intradayFrom = new Date(today.getTime() - INTRADAY_DAYS * 86400_000).toISOString().slice(0, 10)
 
-  let provider: MarketDataProvider = buildProvider(PROVIDER, toDate)
+  let provider: MarketDataProvider = buildProvider(PROVIDER, toDate, marketFor(UNIVERSE_NAME).timeZone)
 
   const uni = universeFor(UNIVERSE_NAME)
   const UNIVERSE = uni.symbols
@@ -166,9 +168,7 @@ async function main(): Promise<void> {
     target: schema.symbols.id, set: { name: dsql.raw(`excluded."name"`) as never },
   })
   await writeDailyBars(BENCHMARK_ID, indexBars)
-  const indexIntraday = UNIVERSE_NAME === 'nifty50'
-    ? await provider.intradayBars(BENCHMARK_ID, intradayFrom, toDate)
-    : []
+  const indexIntraday = await provider.intradayBars(BENCHMARK_ID, intradayFrom, toDate)
   if (indexIntraday.length) await writeIntradayBars(BENCHMARK_ID, indexIntraday)
   log(`benchmark: ${indexBars.length} sessions, ${indexIntraday.length} intraday bars`)
 
@@ -186,11 +186,9 @@ async function main(): Promise<void> {
       if (bars.length < 80) { failures.push(`${id} (only ${bars.length} bars)`); return }
       await writeDailyBars(id, bars)
 
-      // Intraday powers replay, which only the product universe needs.
-      if (UNIVERSE_NAME === 'nifty50') {
-        const intraday = await provider.intradayBars(id, intradayFrom, toDate)
-        if (intraday.length) await writeIntradayBars(id, intraday)
-      }
+      // Intraday powers replay. Both universes are demoable now, so both get it.
+      const intraday = await provider.intradayBars(id, intradayFrom, toDate)
+      if (intraday.length) await writeIntradayBars(id, intraday)
 
       const actions = await provider.corporateActions(id, fromDate, toDate)
       if (actions.length) {
@@ -241,7 +239,8 @@ async function main(): Promise<void> {
       })
 
       // A symbol whose feed is meant to be dead must not receive a fresh one.
-      if (id !== STALE_FEED_SYMBOL || !WITH_FAULTS) {
+      const staleTicker = (FAULT_SYMBOLS[UNIVERSE_NAME] ?? FAULT_SYMBOLS['nifty50']!).stale
+      if (id !== symbolId(staleTicker) || !WITH_FAULTS) {
         await writeLatestObservation(id, bars, provider.source)
       }
       ingested++
@@ -285,12 +284,8 @@ async function main(): Promise<void> {
     log('peer fallback calibration grid stored on the benchmark row')
   }
 
-  if (UNIVERSE_NAME === 'nifty50') {
-    await seedDemoUser(indexBars, UNIVERSE, symbolId)
-    if (WITH_FAULTS) await injectFaults(indexBars)
-  } else {
-    log('us universe: skipping demo seeding and fault injection (evaluation only)')
-  }
+  await seedDemoUser(indexBars, UNIVERSE, symbolId)
+  if (WITH_FAULTS) await injectFaults(indexBars, UNIVERSE_NAME, symbolId)
 
   log(`done in ${((Date.now() - t0) / 1000).toFixed(1)}s`)
   await sql.end()
@@ -357,7 +352,23 @@ async function seedDemoUser(
     id: watchlistId, userId, name: 'My watchlist',
   }).onConflictDoNothing()
 
-  const picks = UNIVERSE.slice(0, DEMO_WATCHLIST_SIZE)
+  // Ensure the injected-fault symbols are actually watched, or the data-quality
+  // scenarios exist in the database but never appear in the demo.
+  const faults = FAULT_SYMBOLS[UNIVERSE_NAME] ?? FAULT_SYMBOLS['nifty50']!
+  const head = UNIVERSE.slice(0, DEMO_WATCHLIST_SIZE)
+  const picks = [...head]
+  for (const t of [faults.stale, faults.conflict]) {
+    if (!picks.some((p) => p.ticker === t)) {
+      const found = UNIVERSE.find((u) => u.ticker === t)
+      if (found) picks.push(found)
+    }
+  }
+  // Replace, don't append. Seeding a second universe previously left the first
+  // one's symbols in the watchlist, so a US deployment would score NSE stocks
+  // against the S&P — a mixed watchlist is not a watchlist for either market.
+  await db.delete(schema.watchlistItems).where(eq(schema.watchlistItems.watchlistId, watchlistId))
+  await db.delete(schema.readCursors).where(eq(schema.readCursors.userId, userId))
+
   await db.insert(schema.watchlistItems).values(picks.map((s, i) => ({
     id: `${watchlistId}:${symbolId(s.ticker)}`,
     watchlistId, symbolId: symbolId(s.ticker), position: i,
@@ -387,7 +398,14 @@ async function seedDemoUser(
  * than pretend otherwise we inject faults explicitly and label them. Every
  * injected row carries source "fault-injection" and is visible in /api/data-health.
  */
-async function injectFaults(indexBars: readonly DailyBar[]): Promise<void> {
+async function injectFaults(
+  indexBars: readonly DailyBar[],
+  universe: string,
+  symbolId: (t: string) => string,
+): Promise<void> {
+  const picks = FAULT_SYMBOLS[universe] ?? FAULT_SYMBOLS['nifty50']!
+  const STALE_FEED_SYMBOL = symbolId(picks.stale)
+  const CONFLICT_SYMBOL = symbolId(picks.conflict)
   const lastDate = indexBars[indexBars.length - 1]!.date
   const sessionClose = new Date(`${lastDate}T10:00:00.000Z`)   // 15:30 IST
 
