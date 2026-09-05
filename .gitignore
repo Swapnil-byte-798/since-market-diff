@@ -7,6 +7,14 @@ dist/
 .DS_Store
 /data/
 /eval/out/
+# …except the reports themselves. They are generated, but they are also the
+# evidence the /eval page renders and the numbers the attention-budget copy
+# quotes, and the API reads them from disk at runtime. Ignoring them shipped a
+# deployment whose Evaluation page said "No evaluation results yet."
+!/eval/out/results.json
+!/eval/out/results.md
+!/eval/out/results.us.json
+!/eval/out/results.us.md
 coverage/
 
 # tunnel URL written by `npm run share`

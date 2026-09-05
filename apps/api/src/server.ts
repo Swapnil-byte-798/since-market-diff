@@ -21,6 +21,7 @@ const marketPayload = (m: MarketDef) => ({
   currency: m.currency, locale: m.locale, benchmark: m.benchmarkLabel,
 })
 import { persistChanges, getChange, getInvestigation } from './services/changes.js'
+import { randomUUID } from 'node:crypto'
 import { badRequest, notFound, unauthorized, send, HttpError } from './errors.js'
 
 const PORT = Number(process.env.PORT ?? 4000)
@@ -100,13 +101,81 @@ app.setErrorHandler((err, _req, reply) => send(reply, err))
 
 /* --------------------------------------------------------------- session */
 
-app.post('/api/session/demo', { config: { rateLimit: LIMITS.session } }, async (_req, reply) => {
-  reply.setCookie('since_session', DEMO_USER, {
+/**
+ * Give every visitor their own copy of the demo.
+ *
+ * "What changed since YOU last looked" is a claim about one reader. Handing
+ * every visitor the same user made that literally false on a shared link: read
+ * cursors are per (user, symbol), so the first person to open a card advanced
+ * the cursor for everyone, and the next visitor arrived to a brief with that
+ * stock already marked seen. On a link circulated to several reviewers the
+ * product quietly emptied itself, one card per click, and the last reader saw
+ * the least.
+ *
+ * Each session therefore gets a user cloned from the seeded template: the same
+ * watchlist and the same starting cursors, but its own state to spend. Existing
+ * sessions are reused, so a reload does not mint a new one.
+ */
+async function cloneDemoUser(): Promise<string> {
+  const [template] = await db.select().from(schema.users)
+    .where(eq(schema.users.id, DEMO_USER)).limit(1)
+  if (!template) throw notFound('Demo user not seeded. Run `npm run ingest`.')
+
+  const suffix = randomUUID().replace(/-/g, '').slice(0, 16)
+  const userId = `user_${suffix}`
+  const watchlistId = `wl_${suffix}`
+
+  const items = await db.select({
+    symbolId: schema.watchlistItems.symbolId, position: schema.watchlistItems.position,
+  }).from(schema.watchlistItems)
+    .innerJoin(schema.watchlists, eq(schema.watchlists.id, schema.watchlistItems.watchlistId))
+    .where(eq(schema.watchlists.userId, DEMO_USER))
+
+  const cursors = await db.select().from(schema.readCursors)
+    .where(eq(schema.readCursors.userId, DEMO_USER))
+
+  await db.insert(schema.users).values({
+    id: userId, email: `${userId}@since.local`, displayName: template.displayName,
+  })
+  await db.insert(schema.watchlists).values({ id: watchlistId, userId, name: 'My watchlist' })
+  if (items.length > 0) {
+    await db.insert(schema.watchlistItems).values(items.map((i, n) => ({
+      id: `wi_${suffix}_${n}`, watchlistId, symbolId: i.symbolId, position: i.position,
+    })))
+  }
+  if (cursors.length > 0) {
+    await db.insert(schema.readCursors).values(cursors.map((c) => ({
+      userId, symbolId: c.symbolId, lastSeenAt: c.lastSeenAt,
+      lastSeenVersion: c.lastSeenVersion, lastSeenPrice: c.lastSeenPrice,
+      lastSeenObservationId: c.lastSeenObservationId,
+    })))
+  }
+  return userId
+}
+
+app.post('/api/session/demo', { config: { rateLimit: LIMITS.session } }, async (req, reply) => {
+  // Reuse a session that already exists, so reloading does not mint a user per
+  // page view — and so a reader's own progress survives navigation.
+  let userId: string | null = null
+  const raw = (req as { cookies: Record<string, string | undefined> }).cookies['since_session']
+  if (raw) {
+    const un = (req as unknown as { unsignCookie: (v: string) => { valid: boolean; value: string | null } })
+      .unsignCookie(raw)
+    if (un.valid && un.value) {
+      const [existing] = await db.select().from(schema.users)
+        .where(eq(schema.users.id, un.value)).limit(1)
+      if (existing) userId = existing.id
+    }
+  }
+
+  if (userId === null) userId = await cloneDemoUser()
+
+  reply.setCookie('since_session', userId, {
     path: '/', httpOnly: true, sameSite: 'lax', signed: true,
     secure: process.env.NODE_ENV === 'production', maxAge: 60 * 60 * 24 * 30,
   })
-  const [user] = await db.select().from(schema.users).where(eq(schema.users.id, DEMO_USER)).limit(1)
-  if (!user) throw notFound('Demo user not seeded. Run `npm run ingest`.')
+  const [user] = await db.select().from(schema.users).where(eq(schema.users.id, userId)).limit(1)
+  if (!user) throw notFound('Session user vanished.')
   return { userId: user.id, email: user.email, displayName: user.displayName }
 })
 

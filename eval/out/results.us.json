@@ -1,0 +1,100 @@
+{
+  "generatedAt": "2026-09-05T08:55:08.192Z",
+  "dataset": {
+    "universe": "us",
+    "provider": "twelvedata",
+    "simulated": false,
+    "symbols": 51,
+    "alignedSessions": 752,
+    "calibrationSessions": 451,
+    "evaluationSessions": 298,
+    "benchmark": "SPY"
+  },
+  "topK": 3,
+  "labels": [
+    {
+      "id": "followthrough-1.5s-2d",
+      "description": "Market-adjusted move over the next 2 sessions exceeded 1.5σ of the symbol's own residual scale",
+      "horizon": 2,
+      "sigmas": 1.5
+    },
+    {
+      "id": "followthrough-2.0s-3d",
+      "description": "Market-adjusted move over the next 3 sessions exceeded 2.0σ",
+      "horizon": 3,
+      "sigmas": 2
+    },
+    {
+      "id": "followthrough-1.0s-1d",
+      "description": "Market-adjusted move on the next session alone exceeded 1.0σ",
+      "horizon": 1,
+      "sigmas": 1
+    }
+  ],
+  "precisionAtK": {
+    "abs-percent": {
+      "label": "Absolute % change (baseline)",
+      "byLabel": {
+        "followthrough-1.5s-2d": 0.22595078299776286,
+        "followthrough-2.0s-3d": 0.12639821029082773,
+        "followthrough-1.0s-1d": 0.4116331096196868
+      }
+    },
+    "price-move": {
+      "label": "Absolute price move (baseline)",
+      "byLabel": {
+        "followthrough-1.5s-2d": 0.2371364653243848,
+        "followthrough-2.0s-3d": 0.13646532438478748,
+        "followthrough-1.0s-1d": 0.39485458612975394
+      }
+    },
+    "residual-only": {
+      "label": "Market-adjusted residual only (ablation)",
+      "byLabel": {
+        "followthrough-1.5s-2d": 0.30089485458612975,
+        "followthrough-2.0s-3d": 0.18008948545861297,
+        "followthrough-1.0s-1d": 0.465324384787472
+      }
+    },
+    "since": {
+      "label": "Since composite",
+      "byLabel": {
+        "followthrough-1.5s-2d": 0.31096196868008946,
+        "followthrough-2.0s-3d": 0.18568232662192394,
+        "followthrough-1.0s-1d": 0.49328859060402686
+      }
+    }
+  },
+  "alertVolume": {
+    "LOW": {
+      "thresholdPercentile": 99,
+      "meanAlertsPerSessionPer50Symbols": 0.40939597315436244,
+      "medianAlertsPerSession": 0,
+      "maxAlertsPerSession": 4,
+      "precision": 0.3442622950819672,
+      "recall": 0.013333333333333334,
+      "alertsFired": 122,
+      "labelUsed": "followthrough-1.5s-2d"
+    },
+    "MEDIUM": {
+      "thresholdPercentile": 95,
+      "meanAlertsPerSessionPer50Symbols": 2.2416107382550337,
+      "medianAlertsPerSession": 2,
+      "maxAlertsPerSession": 12,
+      "precision": 0.32934131736526945,
+      "recall": 0.06984126984126984,
+      "alertsFired": 668,
+      "labelUsed": "followthrough-1.5s-2d"
+    },
+    "HIGH": {
+      "thresholdPercentile": 90,
+      "meanAlertsPerSessionPer50Symbols": 4.718120805369128,
+      "medianAlertsPerSession": 4,
+      "maxAlertsPerSession": 23,
+      "precision": 0.2958748221906117,
+      "recall": 0.13206349206349208,
+      "alertsFired": 1406,
+      "labelUsed": "followthrough-1.5s-2d"
+    }
+  }
+}

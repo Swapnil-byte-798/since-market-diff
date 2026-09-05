@@ -39,7 +39,11 @@ export default function WatchlistPage() {
         </p>
       </header>
 
-      <AddSymbol onAdded={load} existing={new Set(items.map((i) => i.symbolId))} />
+      <AddSymbol
+        onAdded={load}
+        existing={new Set(items.map((i) => i.symbolId))}
+        examples={items.slice(0, 2).map((i) => i.ticker)}
+      />
 
       {items.length === 0 ? (
         <EmptyState
@@ -55,7 +59,14 @@ export default function WatchlistPage() {
   )
 }
 
-function AddSymbol({ onAdded, existing }: { onAdded: () => void; existing: Set<string> }) {
+function AddSymbol({ onAdded, existing, examples }: {
+  onAdded: () => void
+  existing: Set<string>
+  /** Two tickers already on the list, so the hint names this market rather than
+   *  whichever one the product happened to launch on. It read "HDFCBANK,
+   *  Infosys…" above a watchlist of US equities. */
+  examples: string[]
+}) {
   const [q, setQ] = useState('')
   const [results, setResults] = useState<SymbolRow[]>([])
   const [busy, setBusy] = useState(false)
@@ -73,7 +84,8 @@ function AddSymbol({ onAdded, existing }: { onAdded: () => void; existing: Set<s
       <label htmlFor="sym" className="section-label">Add a stock</label>
       <input
         id="sym" value={q} onChange={(e) => setQ(e.target.value)}
-        placeholder="HDFCBANK, Infosys…" autoComplete="off"
+        placeholder={examples.length ? `${examples.join(', ')}…` : 'Search by ticker or name…'}
+        autoComplete="off"
         className="mt-2 w-full border-b border-ink-hairline bg-transparent py-2 text-[0.95rem] text-ink placeholder:text-ink-faint focus:border-ink"
       />
       {results.length > 0 ? (
@@ -174,7 +186,10 @@ function Row({ item, market, onChanged }: { item: WatchlistItem; market?: Market
           <input
             id={`value-${item.symbolId}`}
             type="number" inputMode="decimal" value={value}
-            onChange={(e) => setValue(e.target.value)} placeholder="1400"
+            onChange={(e) => setValue(e.target.value)}
+            // Anchored near the current price. A fixed "1400" was a rupee-shaped
+            // number offering a $1400 threshold on a $62 stock.
+            placeholder={item.price ? String(Math.round(item.price)) : 'Price'}
             className="tnum w-28 border border-ink-hairline bg-paper-raised px-2 py-1.5 text-[0.78rem]"
           />
           <button

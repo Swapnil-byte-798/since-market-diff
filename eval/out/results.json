@@ -1,0 +1,100 @@
+{
+  "generatedAt": "2026-09-04T16:34:58.813Z",
+  "dataset": {
+    "universe": "nifty50",
+    "provider": "synthetic",
+    "simulated": true,
+    "symbols": 50,
+    "alignedSessions": 419,
+    "calibrationSessions": 251,
+    "evaluationSessions": 165,
+    "benchmark": "^NSEI"
+  },
+  "topK": 3,
+  "labels": [
+    {
+      "id": "followthrough-1.5s-2d",
+      "description": "Market-adjusted move over the next 2 sessions exceeded 1.5σ of the symbol's own residual scale",
+      "horizon": 2,
+      "sigmas": 1.5
+    },
+    {
+      "id": "followthrough-2.0s-3d",
+      "description": "Market-adjusted move over the next 3 sessions exceeded 2.0σ",
+      "horizon": 3,
+      "sigmas": 2
+    },
+    {
+      "id": "followthrough-1.0s-1d",
+      "description": "Market-adjusted move on the next session alone exceeded 1.0σ",
+      "horizon": 1,
+      "sigmas": 1
+    }
+  ],
+  "precisionAtK": {
+    "abs-percent": {
+      "label": "Absolute % change (baseline)",
+      "byLabel": {
+        "followthrough-1.5s-2d": 0.15555555555555556,
+        "followthrough-2.0s-3d": 0.05858585858585859,
+        "followthrough-1.0s-1d": 0.3515151515151515
+      }
+    },
+    "rupee-move": {
+      "label": "Absolute ₹ move (baseline)",
+      "byLabel": {
+        "followthrough-1.5s-2d": 0.1494949494949495,
+        "followthrough-2.0s-3d": 0.044444444444444446,
+        "followthrough-1.0s-1d": 0.36363636363636365
+      }
+    },
+    "residual-only": {
+      "label": "Market-adjusted residual only (ablation)",
+      "byLabel": {
+        "followthrough-1.5s-2d": 0.18585858585858586,
+        "followthrough-2.0s-3d": 0.08282828282828283,
+        "followthrough-1.0s-1d": 0.38181818181818183
+      }
+    },
+    "since": {
+      "label": "Since composite",
+      "byLabel": {
+        "followthrough-1.5s-2d": 0.2,
+        "followthrough-2.0s-3d": 0.08080808080808081,
+        "followthrough-1.0s-1d": 0.3939393939393939
+      }
+    }
+  },
+  "alertVolume": {
+    "LOW": {
+      "thresholdPercentile": 99,
+      "meanAlertsPerSessionPer50Symbols": 0.7151515151515152,
+      "medianAlertsPerSession": 1,
+      "maxAlertsPerSession": 3,
+      "precision": 0.23728813559322035,
+      "recall": 0.022029897718332022,
+      "alertsFired": 118,
+      "labelUsed": "followthrough-1.5s-2d"
+    },
+    "MEDIUM": {
+      "thresholdPercentile": 95,
+      "meanAlertsPerSessionPer50Symbols": 2.696969696969697,
+      "medianAlertsPerSession": 3,
+      "maxAlertsPerSession": 8,
+      "precision": 0.19325842696629214,
+      "recall": 0.06766325727773406,
+      "alertsFired": 445,
+      "labelUsed": "followthrough-1.5s-2d"
+    },
+    "HIGH": {
+      "thresholdPercentile": 90,
+      "meanAlertsPerSessionPer50Symbols": 4.842424242424243,
+      "medianAlertsPerSession": 5,
+      "maxAlertsPerSession": 13,
+      "precision": 0.18523153942428036,
+      "recall": 0.11644374508261211,
+      "alertsFired": 799,
+      "labelUsed": "followthrough-1.5s-2d"
+    }
+  }
+}
