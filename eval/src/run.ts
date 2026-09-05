@@ -108,7 +108,7 @@ async function main(): Promise<void> {
   console.log(`[eval] calibration 0..${calEnd}, evaluation ${evalStart}..${n - 1} (disjoint)`)
 
   // --- pass 1: causal per-day features, for every symbol and every day -------
-  interface Day { composite: number; residZ: number; returnPct: number; rupee: number; residSigma: number }
+  interface Day { composite: number; residZ: number; returnPct: number; priceMove: number; residSigma: number }
   const feature = new Map<string, Day[]>()
 
   for (const s of series) {
@@ -166,7 +166,7 @@ async function main(): Promise<void> {
         composite: contributions.reduce((a, c) => a + c.points, 0),
         residZ,
         returnPct: (Math.exp(s.ret[i]!) - 1) * 100,
-        rupee: Math.abs(bar.adjClose - prevBar.adjClose),
+        priceMove: Math.abs(bar.adjClose - prevBar.adjClose),
         residSigma: sigma,
       })
     }
@@ -210,7 +210,7 @@ async function main(): Promise<void> {
       const pctl = percentileOf(grids.get(s.symbolId) ?? null, d.composite)
       candidates.push({
         symbolId: s.symbolId, returnPct: d.returnPct,
-        rupeeMove: d.rupee, composite: pctl ?? d.composite, pctl,
+        priceMove: d.priceMove, composite: pctl ?? d.composite, pctl,
       })
       residualZ.set(s.symbolId, d.residZ)
       if (pctl !== null) {
@@ -307,7 +307,7 @@ async function main(): Promise<void> {
   await sql.end()
 }
 
-function empty() { return { composite: NaN, residZ: 0, returnPct: 0, rupee: 0, residSigma: 0 } }
+function empty() { return { composite: NaN, residZ: 0, returnPct: 0, priceMove: 0, residSigma: 0 } }
 function mean(xs: readonly number[]): number { return xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : 0 }
 
 async function providerMeta(): Promise<{ provider: string; simulated: boolean }> {

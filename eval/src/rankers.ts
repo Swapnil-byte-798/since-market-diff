@@ -10,8 +10,8 @@ export interface Candidate {
   symbolId: string
   /** Percentage return over the decision window. */
   returnPct: number
-  /** Absolute rupee move per share. */
-  rupeeMove: number
+  /** Absolute move per share, in the market's own currency. */
+  priceMove: number
   /** Our composite, produced by the PRODUCTION signal code. */
   composite: number
   /** Calibrated percentile of the composite. */
@@ -24,9 +24,9 @@ export type Ranker = (candidates: readonly Candidate[]) => Candidate[]
 export const byAbsolutePercent: Ranker = (c) =>
   [...c].sort((a, b) => Math.abs(b.returnPct) - Math.abs(a.returnPct) || a.symbolId.localeCompare(b.symbolId))
 
-/** Baseline 2: rank by the size of the move in rupees. */
-export const byRupeeMove: Ranker = (c) =>
-  [...c].sort((a, b) => Math.abs(b.rupeeMove) - Math.abs(a.rupeeMove) || a.symbolId.localeCompare(b.symbolId))
+/** Baseline 2: rank by the size of the move in currency terms. */
+export const byPriceMove: Ranker = (c) =>
+  [...c].sort((a, b) => Math.abs(b.priceMove) - Math.abs(a.priceMove) || a.symbolId.localeCompare(b.symbolId))
 
 /** Ours: market-adjusted surprise, volume, gap and crossings, calibrated. */
 export const bySinceComposite: Ranker = (c) =>
@@ -43,7 +43,7 @@ export const byResidualOnly = (residualZ: Map<string, number>): Ranker => (c) =>
 
 export const RANKERS: { id: string; label: string; make: (ctx: RankCtx) => Ranker }[] = [
   { id: 'abs-percent', label: 'Absolute % change (baseline)', make: () => byAbsolutePercent },
-  { id: 'rupee-move', label: 'Absolute ₹ move (baseline)', make: () => byRupeeMove },
+  { id: 'price-move', label: 'Absolute price move (baseline)', make: () => byPriceMove },
   { id: 'residual-only', label: 'Market-adjusted residual only (ablation)', make: (ctx) => byResidualOnly(ctx.residualZ) },
   { id: 'since', label: 'Since composite', make: () => bySinceComposite },
 ]

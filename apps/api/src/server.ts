@@ -758,11 +758,18 @@ function volumeMultipleOf(contributions: { key: string; detail: string }[] | nul
   return m ? Number(m[1]) : null
 }
 
-app.get('/health', async () => {
+async function health() {
   const meta = await providerInfo()
   const counted = await db.select({ count: dsql<number>`count(*)` }).from(schema.dailyBars)
   return { ok: true, ...meta, dailyBars: Number(counted[0]?.count ?? 0) }
-})
+}
+
+// Two paths, deliberately. The launcher polls /health on loopback before it
+// exposes the web server, and that must not depend on Next being up. Anything
+// outside the box arrives through Next's /api proxy instead, so the keep-warm
+// ping and any external uptime check need the prefixed one to exist.
+app.get('/health', health)
+app.get('/api/health', health)
 
 try {
   await app.listen({ port: PORT, host: '127.0.0.1' })

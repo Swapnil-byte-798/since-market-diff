@@ -125,16 +125,17 @@ against another moment, through the same code path.
 
 Open **/eval**.
 
-> Ranking by market-adjusted surprise scored **0.202** against **0.158** for absolute
-> % change — **+28%** on Precision@3.
+> Ranking by market-adjusted surprise scored **0.311** against **0.226** for absolute
+> % change — **+38%** on Precision@3.
 
 Every watchlist claims its ranking is smart. This one was measured against the dumb
 baselines, on held-out data, with the production scoring code — and the ablation row
 shows *which part* does the work.
 
-Read the caveat aloud rather than hoping nobody notices it: **this run used simulated
-data**, because the NSE feed rate-limited the machine mid-ingestion. It measures the
-algorithm honestly; it is not a claim about real markets.
+Read the caveat aloud rather than hoping nobody notices it: **these are US
+equities, not Indian ones** — 51 symbols, 753 real sessions — because every free
+NSE feed is gated or IP-blocked. The model is measured on real market data; it
+is not yet measured on Indian market microstructure.
 
 ---
 
@@ -150,4 +151,4 @@ algorithm honestly; it is not a claim about real markets.
 | Data goes stale? | Alert suppressed, staleness shown. Never a confident wrong alert. |
 | 10,000 users? | Market truth once per symbol (~2,000); user truth is a read-time join. |
 | Why an LLM at all? | Only for hypothesis elimination over evidence. Ranking is deterministic and stays that way. |
-| **What's wrong with it?** | The dataset is simulated; the live agent path was never executed; the eval label is a proxy. All three are in the README. |
+| **What's wrong with it?** | The market is American, not Indian; the agent depends on a free-tier quota; the eval label is a proxy for "mattered". All three are in the README. |

@@ -19,7 +19,9 @@ services:
     region: singapore     # Closest to an Indian audience.
     buildCommand: npm install && npm run build && npm run deploy:seed
     startCommand: npm start
-    healthCheckPath: /
+    # Cheap and precise: it touches the database, so a green check means the
+    # service can actually serve a brief, not just render a shell.
+    healthCheckPath: /api/health
     envVars:
       # Neon connection string, set in the Render dashboard. Must include
       # ?sslmode=require — the client enables TLS for any non-loopback host.

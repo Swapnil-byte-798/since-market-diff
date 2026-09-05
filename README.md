@@ -2,7 +2,8 @@
 
 **Not what your stocks are doing. What meaningfully changed since *you* last looked.**
 
-A personalised market-diff engine for NSE equities. Built for CODE 2026.
+A personalised market-diff engine for listed equities, running on real US
+market data. Built for CODE 2026.
 
 ---
 
@@ -146,23 +147,27 @@ Three properties make these numbers worth reading:
 3. **Three labels, not one.** A result that only survives the definition you
    happened to pick is not a result.
 
-#### Why US data for a product built on NSE
+#### Why US data
 
-The product watches Indian equities, which is where a Groww-shaped watchlist
-belongs. But every free NSE feed was unavailable: Yahoo rate-limits by IP and
-refused entire Indian mobile carrier ranges, NSE's own site blocks non-browser
-traffic at the edge, and Twelve Data gates NSE behind a paid plan while serving
-US equities free.
+A Groww-shaped watchlist belongs on Indian equities, and the engine is built to
+run on them: the market definition, session clock and benchmark are data, not
+constants, and `--universe nifty50` is a supported path.
 
-Rather than validate the model against data this repository generated — which
-would prove nothing about markets — the evaluation runs on the real prices that
-were actually obtainable, through the same harness and the same scoring code.
-The demo dataset stays NSE, and every price in it is labelled `SIMULATED`
-wherever it appears.
+But every free NSE feed was unavailable. Yahoo rate-limits by IP and refused
+entire Indian mobile carrier ranges, NSE's own site blocks non-browser traffic
+at the edge, and Twelve Data gates NSE behind a paid plan while serving US
+equities free.
 
-Running the same harness on the generated NSE dataset gives 0.202 against 0.158
-— the same direction, on data that proves less. Both reports ship:
-`eval/out/results.us.json` and `eval/out/results.json`.
+The choice was therefore between a demo on Indian symbols whose prices this
+repository invented, and a demo on real prices from a different exchange. Real
+data wins: a scoring model is a claim about how markets behave, and inventing
+the prices to demonstrate it against would make the demonstration circular.
+
+So both the demo and the evaluation now run on the same real US market data —
+51 symbols, 753 sessions from Twelve Data — through the same scoring code. The
+synthetic NSE dataset is still generated and still ships its own report
+(`eval/out/results.json`, 0.202 against 0.158), because a deterministic dataset
+is useful for testing. It is no longer what the product shows you.
 
 Regenerate: `npm run eval` → `eval/out/results.json`, rendered at `/eval`.
 
@@ -347,7 +352,8 @@ Audited against the specification this was built to. Nothing below is aspiration
 | Area | Status |
 |---|---|
 | Monorepo, pure `@since/core`, eval imports the same scoring code | done |
-| NSE / NIFTY 50, Asia/Kolkata, market hours and holidays derived from data | done |
+| Market definition as data: session clock, benchmark, currency, holidays derived from bars | done |
+| Two universes wired end to end (`--universe us` / `nifty50`) | done |
 | Market truth / user truth / derived split (19 tables) | done |
 | Provider abstraction: real Yahoo + deterministic synthetic | done |
 | `evaluateBrief(user, at)` — one path for live and replay | done |
@@ -365,7 +371,8 @@ Audited against the specification this was built to. Nothing below is aspiration
 | Agent: hypothesis elimination, 9 typed tools, guards, deterministic fallback | done — **verified against a live model** |
 | Provider-neutral LLM layer (Gemini + Anthropic) | done |
 | Evaluation on real market data | done — 753 sessions, Twelve Data |
-| Real NSE prices in the demo | **blocked — every free NSE feed gated or IP-banned** |
+| Real prices in the demo | done — the demo runs on the same real US data |
+| Real *NSE* prices | **blocked — every free NSE feed gated or IP-banned** |
 | Frontend component tests | not done, deliberately |
 | Feedback loop feeding into weights | not done — votes are stored only |
 
@@ -402,7 +409,7 @@ variable still overrides it.
 | Variable | Default | Purpose |
 |---|---|---|
 | `DATABASE_URL` | `postgresql://since:since@localhost:5544/since` | Local Postgres. **Non-loopback hosts are rejected at the client.** |
-| `TWELVEDATA_API_KEY` | — | Real NSE data. [Free key](https://twelvedata.com/pricing), 800 req/day; an ingest needs ~102. |
+| `TWELVEDATA_API_KEY` | — | Real market data. [Free key](https://twelvedata.com/pricing), 800 req/day; an ingest needs ~102. |
 | `GEMINI_API_KEY` | — | Enables the agent. [Free key](https://aistudio.google.com/apikey). Preferred when both are set. |
 | `ANTHROPIC_API_KEY` | — | Alternative agent provider. |
 | `AGENT_PROVIDER` | auto | `gemini` \| `anthropic` \| `none` |
@@ -453,17 +460,18 @@ Every one of those would have made the feature list longer and the product worse
 
 **Honest ones, not the flattering kind.**
 
-1. **The demo dataset is simulated; the evaluation is not.** Every free NSE feed
-   proved unavailable — Yahoo refused entire Indian mobile carrier ranges (their
-   homepage returned 429 while every other host resolved, across two carrier IPs),
-   NSE's own site returns 403 to non-browser traffic, and Twelve Data gates NSE
-   behind a paid plan. So the model is validated on 753 sessions of real US market
-   data and demonstrated on NSE symbols whose prices are generated and labelled
-   `SIMULATED` everywhere they appear. A paid NSE plan, or an unblocked network,
-   makes the demo real too: `npm run ingest`. The evaluation numbers measure the algorithm
-   against data with known structure — they are not a claim about real markets.
-   The provider seam makes this a one-flag switch, and the real adapter is written,
-   typed and used (it ingested 11,760 real NSE bars before the block).
+1. **The market is American, not Indian.** Every free NSE feed proved
+   unavailable — Yahoo refused entire Indian mobile carrier ranges (their
+   homepage returned 429 while every other host resolved, across two carrier
+   IPs), NSE's own site returns 403 to non-browser traffic, and Twelve Data
+   gates NSE behind a paid plan. Both the demo and the evaluation therefore run
+   on real US prices rather than on invented Indian ones. What this does *not*
+   demonstrate is Indian market microstructure — circuit limits, T+1 settlement,
+   promoter-holding disclosures. The engine reads the exchange from the data
+   (`--universe nifty50` is wired and typed, and ingested 11,760 real NSE bars
+   before the block), so a paid NSE plan is a flag, not a rewrite. But an
+   untested path is an untested path, and this one is untested against a live
+   NSE feed.
 2. **The agent depends on a free-tier quota.** Verified end to end against
    Gemini — 12 tool calls, four hypotheses resolved, a grounded conclusion — but
    the free tier allows roughly 20 requests per day *per model*, and one

@@ -21,7 +21,7 @@
 | `/eval` | 0.312 vs 0.225 on real market data — we measured our own claim |
 | "Withheld — data we don't trust" | Degrade, don't lie: stale and conflicting data suppress alerts |
 | [`DECISIONS.md`](DECISIONS.md) | 15 decisions, each with what it cost |
-| [README § Limitations](README.md#limitations) | Four honest ones, including that this dataset is simulated |
+| [README § Limitations](README.md#limitations) | Four honest ones, including that the market is American, not Indian |
 
 ## The one-sentence version
 
